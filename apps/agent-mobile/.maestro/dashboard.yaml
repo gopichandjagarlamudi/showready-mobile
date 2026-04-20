@@ -1,0 +1,21 @@
+appId: ${APP_ID}
+---
+- runFlow: open-app.yaml
+- assertVisible:
+    id: dashboard-screen
+- assertVisible:
+    id: invite-button
+- tapOn:
+    id: invite-button
+- runFlow:
+    when:
+      visible: Cancel
+    commands:
+      - tapOn: Cancel
+- runFlow:
+    when:
+      visible: Close
+    commands:
+      - tapOn: Close
+- assertVisible:
+    text: Invite ready

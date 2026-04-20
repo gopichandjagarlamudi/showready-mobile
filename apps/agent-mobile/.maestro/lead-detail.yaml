@@ -1,0 +1,22 @@
+appId: ${APP_ID}
+---
+- runFlow: open-app.yaml
+- tapOn:
+    text: Pipeline
+- assertVisible:
+    id: pipeline-screen
+- tapOn:
+    id: pipeline-open-da26711a-69dd-4ce2-ab48-8efcf9811f14
+- assertVisible:
+    id: lead-detail-screen
+- tapOn:
+    id: lead-override-score-input
+- inputText: 8.9
+- tapOn:
+    id: lead-override-note-input
+- inputText: Maestro override
+- hideKeyboard
+- tapOn:
+    id: lead-save-override-button
+- assertVisible:
+    text: Override saved

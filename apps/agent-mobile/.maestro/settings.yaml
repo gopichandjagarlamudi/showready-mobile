@@ -1,0 +1,20 @@
+appId: ${APP_ID}
+---
+- runFlow: open-app.yaml
+- tapOn:
+    text: Settings
+- assertVisible:
+    id: settings-screen
+- assertVisible:
+    id: settings-save-button
+- tapOn:
+    id: settings-brokerage-input
+- inputText: " QA"
+- tapOn:
+    id: settings-license-number-input
+- inputText: "-M"
+- hideKeyboard
+- tapOn:
+    id: settings-save-button
+- assertVisible:
+    text: Settings saved

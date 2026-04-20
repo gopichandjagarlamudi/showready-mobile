@@ -1,0 +1,36 @@
+appId: ${APP_ID}
+---
+- runFlow: open-app.yaml
+- tapOn:
+    text: Appointments
+- assertVisible:
+    id: appointments-screen
+- tapOn:
+    id: appointment-lead-option-bd30eb53-5bc1-460d-95a2-13c2f7c5e2bb
+- tapOn:
+    id: appointment-date-input
+- inputText: 2026-04-21
+- tapOn:
+    id: appointment-start-time-input
+- inputText: 10:30
+- tapOn:
+    id: appointment-address-input
+- inputText: 123 Queen St W, Toronto
+- tapOn:
+    id: appointment-notes-input
+- inputText: Maestro walkthrough
+- hideKeyboard
+- tapOn:
+    id: appointment-save-button
+- assertVisible:
+    text: Appointment saved
+- assertVisible:
+    text: Maestro Appointment Lead
+- tapOn:
+    text: Mark completed
+- assertVisible:
+    text: Appointment updated
+- tapOn:
+    id: appointments-tab-completed
+- assertVisible:
+    text: Maestro Appointment Lead

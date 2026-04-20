@@ -1,0 +1,48 @@
+{
+  "name": "@showready/agent-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.js",
+  "scripts": {
+    "dev": "expo start",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "seed:maestro": "node ./scripts/seed-maestro-state.cjs",
+    "maestro:auth-url": "node ./scripts/create-maestro-auth-url.cjs",
+    "test": "jest --runInBand --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test:maestro:ios": "maestro test .maestro/smoke-ios.yaml",
+    "test:maestro:android": "maestro test .maestro/smoke-android.yaml"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
+    "@showready/contracts": "workspace:*",
+    "@showready/design-system": "workspace:*",
+    "@showready/infrastructure": "workspace:*",
+    "@supabase/supabase-js": "^2.84.0",
+    "expo": "~54.0.33",
+    "expo-auth-session": "^7.0.10",
+    "expo-clipboard": "~8.0.8",
+    "expo-constants": "~18.0.13",
+    "expo-linking": "~8.0.8",
+    "expo-router": "~6.0.13",
+    "expo-secure-store": "~15.0.7",
+    "expo-web-browser": "~15.0.8",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.4",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "react-native-url-polyfill": "^2.0.0",
+    "react-native-web": "~0.21.0"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "13.3.3",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^19.2.2",
+    "jest": "^29.7.0",
+    "jest-expo": "~54.0.13",
+    "react-test-renderer": "19.1.0"
+  }
+}

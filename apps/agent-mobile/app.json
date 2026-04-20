@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "ShowReady",
+    "slug": "showready-native-rebuild",
+    "scheme": "showready",
+    "plugins": [
+      "expo-router",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "package": "com.anonymous.showreadynativerebuild"
+    },
+    "ios": {
+      "bundleIdentifier": "com.anonymous.showready-native-rebuild"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+appId: ${APP_ID}
+---
+- runFlow: open-app.yaml
+- tapOn:
+    text: New Leads
+- assertVisible:
+    id: new-leads-screen
+- assertVisible:
+    id: new-lead-card-e357e934-6f9a-4d75-bf12-8db0cd1bf701
+- tapOn:
+    id: review-confirm-e357e934-6f9a-4d75-bf12-8db0cd1bf701
+- assertNotVisible:
+    id: new-lead-card-e357e934-6f9a-4d75-bf12-8db0cd1bf701

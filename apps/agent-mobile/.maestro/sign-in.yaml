@@ -1,0 +1,29 @@
+appId: ${APP_ID}
+---
+- openLink: ${AUTH_CALLBACK_URL}
+- runFlow:
+    when:
+      visible: Open
+    commands:
+      - tapOn: Open
+- runFlow:
+    when:
+      visible: Not Now
+    commands:
+      - tapOn: Not Now
+- runFlow:
+    when:
+      visible: Continue
+    commands:
+      - tapOn: Continue
+- runFlow:
+    when:
+      visible: Save Password?
+    commands:
+      - tapOn: Not Now
+- extendedWaitUntil:
+    visible:
+      id: dashboard-screen
+    timeout: 30000
+- assertVisible:
+    id: dashboard-screen

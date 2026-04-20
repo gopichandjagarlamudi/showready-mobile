@@ -1,0 +1,15 @@
+node_modules
+.turbo
+dist
+.next
+.expo
+coverage
+*.log
+*.tsbuildinfo
+.DS_Store
+.env.local
+apps/agent-mobile/ios
+apps/agent-mobile/android
+apps/agent-mobile/.expo
+apps/agent-mobile/.env.local
+apps/intake-web/.env.local
