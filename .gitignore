@@ -8,6 +8,7 @@ coverage
 *.tsbuildinfo
 .DS_Store
 .env.local
+test-results
 apps/agent-mobile/ios
 apps/agent-mobile/android
 apps/agent-mobile/.expo
