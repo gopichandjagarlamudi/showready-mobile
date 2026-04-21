@@ -22,7 +22,7 @@ function suggestedReviewStage(lead: Lead): ReviewStage {
 }
 
 export default function NewLeadsScreen() {
-  const { session } = useSession()
+  const { session, workspaceVersion = 0 } = useSession()
   const api = useMobileApi()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
@@ -59,7 +59,7 @@ export default function NewLeadsScreen() {
     return () => {
       isMounted = false
     }
-  }, [api, session])
+  }, [api, session, workspaceVersion])
 
   async function handleReview(leadId: string, stage: ReviewStage) {
     setMessages((current) => ({ ...current, [leadId]: null }))

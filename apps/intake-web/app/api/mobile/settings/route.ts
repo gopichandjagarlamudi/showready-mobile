@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       fullName: context.agent.fullName,
       brokerage: context.agent.brokerage,
       licenseNumber: context.agent.licenseNumber,
-      notificationPreference: context.settings.notificationPreference,
+      emailNotificationsEnabled: context.settings.emailNotificationsEnabled,
       brandName: context.settings.brandName,
       brandColor: context.settings.brandColor,
       accentColor: context.settings.accentColor,

@@ -63,7 +63,8 @@ describe("HomeScreen", () => {
   it("shows the generated invite link and copies it from the dashboard", async () => {
     const screen = render(<HomeScreen />)
 
-    fireEvent.press(await screen.findByTestId("invite-button"))
+    fireEvent.press(await screen.findByTestId("invite-sheet-open-button"))
+    fireEvent.press(await screen.findByText("Create invite"))
 
     await screen.findByText("https://showready.example.com/intake/invite-token")
     expect(screen.getByTestId("copy-invite-button")).toBeTruthy()

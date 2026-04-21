@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useMemo, useRef, useState, useTransition } from "react"
 import type {
   IntakeDraft,
   QuestionDefinition,
@@ -114,6 +114,7 @@ export function IntakeFlow({
   const [index, setIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const touchActionRef = useRef<"skip" | null>(null)
 
   const activeTemplate = draft.intent === "rent" ? rentalTemplate : saleTemplate
   const resolvedRequiredQuestions = draft.intent
@@ -261,6 +262,20 @@ export function IntakeFlow({
     persist(draft)
   }
 
+  function runSkipFromTouch() {
+    touchActionRef.current = "skip"
+    handleSkip()
+  }
+
+  function runSkipFromClick() {
+    if (touchActionRef.current === "skip") {
+      touchActionRef.current = null
+      return
+    }
+
+    handleSkip()
+  }
+
   return (
     <div
       style={{
@@ -327,7 +342,13 @@ export function IntakeFlow({
           </div>
         </div>
 
-        <div style={{ display: "grid", gap: 18 }}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            handleAdvance()
+          }}
+          style={{ display: "grid", gap: 18 }}
+        >
           <div>
             <p
               style={{
@@ -420,6 +441,7 @@ export function IntakeFlow({
               type={current.type === "email" ? "email" : current.type === "tel" ? "tel" : "text"}
               value={String(value)}
               placeholder={current.placeholder}
+              enterKeyHint={isLastStep ? "done" : "next"}
               onChange={(event) =>
                 setDraft((previous) => setDraftValue(previous, current.key, event.target.value))
               }
@@ -447,8 +469,11 @@ export function IntakeFlow({
 
           <div style={{ display: "flex", gap: 12 }}>
             <button
-              type="button"
-              onClick={handleAdvance}
+              type="submit"
+              onTouchEnd={(event) => {
+                event.preventDefault()
+                handleAdvance()
+              }}
               disabled={isPending}
               style={{
                 flex: 1,
@@ -465,7 +490,11 @@ export function IntakeFlow({
             {!current.required ? (
               <button
                 type="button"
-                onClick={handleSkip}
+                onTouchEnd={(event) => {
+                  event.preventDefault()
+                  runSkipFromTouch()
+                }}
+                onClick={runSkipFromClick}
                 disabled={isPending}
                 style={{
                   borderRadius: 999,
@@ -479,7 +508,7 @@ export function IntakeFlow({
               </button>
             ) : null}
           </div>
-        </div>
+        </form>
       </div>
     </div>
   )

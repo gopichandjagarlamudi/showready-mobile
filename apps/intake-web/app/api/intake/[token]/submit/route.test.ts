@@ -6,14 +6,18 @@ const {
   mockCreateSupabaseAdminClient,
   mockSubmitInvite,
   mockGetAgentContext,
+  mockListAgentPushTokens,
   mockSendLeadScoredEmail,
+  mockSendLeadScoredPushNotifications,
   mockTrackServerEvent
 } = vi.hoisted(() => ({
   mockSubmitIntakeDraft: vi.fn(),
   mockCreateSupabaseAdminClient: vi.fn(),
   mockSubmitInvite: vi.fn(),
   mockGetAgentContext: vi.fn(),
+  mockListAgentPushTokens: vi.fn(),
   mockSendLeadScoredEmail: vi.fn(),
+  mockSendLeadScoredPushNotifications: vi.fn(),
   mockTrackServerEvent: vi.fn()
 }))
 
@@ -27,11 +31,13 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/supabase/data", () => ({
   submitInvite: mockSubmitInvite,
-  getAgentContext: mockGetAgentContext
+  getAgentContext: mockGetAgentContext,
+  listAgentPushTokens: mockListAgentPushTokens
 }))
 
 vi.mock("@/lib/notifications", () => ({
-  sendLeadScoredEmail: mockSendLeadScoredEmail
+  sendLeadScoredEmail: mockSendLeadScoredEmail,
+  sendLeadScoredPushNotifications: mockSendLeadScoredPushNotifications
 }))
 
 vi.mock("@/lib/analytics", () => ({
@@ -41,6 +47,12 @@ vi.mock("@/lib/analytics", () => ({
 describe("POST /api/intake/[token]/submit", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000"
+    mockSubmitInvite.mockReset()
+    mockGetAgentContext.mockReset()
+    mockListAgentPushTokens.mockReset()
+    mockSendLeadScoredEmail.mockReset()
+    mockSendLeadScoredPushNotifications.mockReset()
+    mockTrackServerEvent.mockReset()
     mockCreateSupabaseAdminClient.mockReturnValue({ admin: true })
     mockSubmitIntakeDraft.mockImplementation(async (gateway, token, draft) => {
       return gateway.submitDraft(token, draft)
@@ -58,13 +70,18 @@ describe("POST /api/intake/[token]/submit", () => {
       agent: {
         email: "agent@showready.local",
         fullName: "Demo Agent"
+      },
+      settings: {
+        emailNotificationsEnabled: true
       }
     })
+    mockListAgentPushTokens.mockResolvedValue(["ExponentPushToken[abc123]"])
     mockSendLeadScoredEmail.mockResolvedValue(undefined)
+    mockSendLeadScoredPushNotifications.mockResolvedValue(undefined)
     mockTrackServerEvent.mockResolvedValue(undefined)
   })
 
-  it("submits the intake, emails the agent, and tracks the event", async () => {
+  it("submits the intake, sends push plus optional email, and tracks the event", async () => {
     const draft = {
       contact: {
         fullName: "Taylor Verify",
@@ -103,6 +120,15 @@ describe("POST /api/intake/[token]/submit", () => {
       }
     })
     expect(mockSubmitInvite).toHaveBeenCalledWith({ admin: true }, "invite-token", { draft })
+    expect(mockSendLeadScoredPushNotifications).toHaveBeenCalledWith({
+      expoPushTokens: ["ExponentPushToken[abc123]"],
+      title: "New lead submitted",
+      body: "Taylor Verify just submitted the intake form.",
+      data: {
+        leadId: "lead-1",
+        route: "/(app)/new-leads"
+      }
+    })
     expect(mockSendLeadScoredEmail).toHaveBeenCalledWith({
       to: "agent@showready.local",
       agentName: "Demo Agent",
@@ -116,5 +142,38 @@ describe("POST /api/intake/[token]/submit", () => {
       { recommendation: "show" },
       "agent-1"
     )
+  })
+
+  it("skips email when the agent leaves email notifications disabled", async () => {
+    mockGetAgentContext.mockResolvedValue({
+      agent: {
+        email: "agent@showready.local",
+        fullName: "Demo Agent"
+      },
+      settings: {
+        emailNotificationsEnabled: false
+      }
+    })
+
+    const response = await POST(
+      new Request("http://localhost/api/intake/token/submit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          draft: {
+            contact: {
+              fullName: "Taylor Verify"
+            }
+          }
+        })
+      }),
+      { params: Promise.resolve({ token: "invite-token" }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockSendLeadScoredPushNotifications).toHaveBeenCalledOnce()
+    expect(mockSendLeadScoredEmail).not.toHaveBeenCalled()
   })
 })

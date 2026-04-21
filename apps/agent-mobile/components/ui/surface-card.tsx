@@ -25,6 +25,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
     padding: 20,
-    gap: 12
+    gap: 12,
+    ...mobileTheme.elevation.card
   }
 })

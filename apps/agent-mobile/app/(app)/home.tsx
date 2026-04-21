@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react"
 import * as Clipboard from "expo-clipboard"
-import { Share, StyleSheet, Text, View } from "react-native"
+import { Pressable, Share, StyleSheet, Text, View } from "react-native"
 import { router } from "expo-router"
 import type { DashboardSummary, Lead } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
+import { BottomSheet } from "@/components/ui/bottom-sheet"
 import { InlineMessage } from "@/components/ui/inline-message"
 import { StageChip } from "@/components/ui/stage-chip"
 import { SurfaceCard } from "@/components/ui/surface-card"
@@ -13,7 +14,7 @@ import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
 export default function HomeScreen() {
-  const { session } = useSession()
+  const { session, workspaceVersion = 0 } = useSession()
   const api = useMobileApi()
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [recentLeads, setRecentLeads] = useState<Lead[]>([])
@@ -25,6 +26,7 @@ export default function HomeScreen() {
   } | null>(null)
   const [isCreatingInvite, setIsCreatingInvite] = useState(false)
   const [latestInviteUrl, setLatestInviteUrl] = useState<string | null>(null)
+  const [isInviteSheetOpen, setIsInviteSheetOpen] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -57,7 +59,7 @@ export default function HomeScreen() {
     return () => {
       isMounted = false
     }
-  }, [api, session])
+  }, [api, session, workspaceVersion])
 
   async function handleCreateInvite() {
     setIsCreatingInvite(true)
@@ -66,6 +68,7 @@ export default function HomeScreen() {
     try {
       const invite = await api.createInvite()
       setLatestInviteUrl(invite.shareUrl)
+      setIsInviteSheetOpen(true)
       setMessage({
         tone: "success",
         title: "Invite ready",
@@ -124,16 +127,18 @@ export default function HomeScreen() {
 
   return (
     <ScreenShell
-      title="Dashboard"
-      subtitle="Create intake links, watch pipeline health, and jump straight into the latest lead movement."
+      title="Field dashboard"
+      subtitle="One mobile command center for invite creation, live pipeline health, and fast access to the leads that need action first."
+      headerAction={{
+        icon: "settings",
+        label: "Open settings",
+        onPress: () => router.push("/settings"),
+        testID: "home-settings-button"
+      }}
       testID="dashboard-screen"
     >
       {message ? (
-        <InlineMessage
-          tone={message.tone}
-          title={message.title}
-          message={message.message}
-        />
+        <InlineMessage tone={message.tone} title={message.title} message={message.message} />
       ) : null}
 
       {loadState === "loading" ? (
@@ -148,67 +153,60 @@ export default function HomeScreen() {
         />
       ) : (
         <>
-          <SurfaceCard style={styles.snapshotCard}>
-            <Text style={styles.sectionEyebrow}>Pipeline snapshot</Text>
-            <View style={styles.metricGrid}>
-              <MetricCard label="Total leads" value={summary.totalLeads} />
-              <MetricCard label="Ready to show" value={summary.readyToShow} />
-              <MetricCard label="Booked" value={summary.appointmentBooked} />
-              <MetricCard label="Nurture" value={summary.nurture} />
-              <MetricCard label="Hold" value={summary.hold} />
-              <MetricCard label="Average score" value={summary.averageScore.toFixed(1)} />
+          <SurfaceCard style={styles.heroCard}>
+            <Text style={styles.sectionEyebrow}>Today at a glance</Text>
+            <Text style={styles.heroValue}>{summary.totalLeads} live leads</Text>
+            <Text style={styles.copy}>
+              {summary.readyToShow} ready to show, {summary.appointmentBooked} booked, and an average
+              qualification score of {summary.averageScore.toFixed(1)}.
+            </Text>
+            <View style={styles.actionRow}>
+              <ActionButton
+                label="Invite tools"
+                icon="link"
+                onPress={() => setIsInviteSheetOpen(true)}
+                testID="invite-sheet-open-button"
+              />
+              <ActionButton
+                label="Open queue"
+                tone="secondary"
+                icon="inbox"
+                onPress={() => router.push("/new-leads")}
+              />
             </View>
           </SurfaceCard>
 
-          <SurfaceCard style={styles.inviteCard}>
-            <Text style={styles.sectionTitle}>Invite flow</Text>
-            <Text style={styles.copy}>
-              Generate a fresh seven-day intake link and hand it off from your phone without opening the web workspace.
-            </Text>
-            <ActionButton
-              label={isCreatingInvite ? "Creating invite..." : "Create invite"}
-              onPress={() => {
-                void handleCreateInvite()
-              }}
-              disabled={isCreatingInvite}
-              testID="invite-button"
-            />
-            {latestInviteUrl ? (
-              <View style={styles.generatedInvite}>
-                <Text style={styles.generatedInviteLabel}>Latest link</Text>
-                <Text selectable style={styles.generatedInviteUrl}>
-                  {latestInviteUrl}
-                </Text>
-                <ActionButton
-                  label="Copy link"
-                  tone="secondary"
-                  onPress={() => {
-                    void handleCopyInvite()
-                  }}
-                  testID="copy-invite-button"
-                />
-                <ActionButton
-                  label="Share link"
-                  tone="secondary"
-                  onPress={() => {
-                    void handleShareInvite()
-                  }}
-                  testID="share-invite-button"
-                />
-              </View>
-            ) : null}
-          </SurfaceCard>
+          <View style={styles.metricGrid}>
+            <MetricTile label="Ready" value={summary.readyToShow} tone="ready" />
+            <MetricTile label="Booked" value={summary.appointmentBooked} tone="appointment" />
+            <MetricTile label="Nurture" value={summary.nurture} tone="nurture" />
+            <MetricTile label="Hold" value={summary.hold} tone="hold" />
+          </View>
 
           <SurfaceCard style={styles.listCard}>
-            <Text style={styles.sectionTitle}>Recent lead movement</Text>
+            <View style={styles.listHeader}>
+              <View style={styles.listHeaderCopy}>
+                <Text style={styles.sectionTitle}>Recent lead movement</Text>
+                <Text style={styles.copy}>The four most recent submissions stay within thumb reach.</Text>
+              </View>
+            </View>
+
             {recentLeads.length === 0 ? (
               <EmptyState
                 title="No recent activity"
                 body="New submissions and pipeline updates will appear here once invites are in circulation."
+                variant="guided"
+                eyebrow="First run"
               />
             ) : (
               recentLeads.map((lead) => (
-                <View key={lead.id} style={styles.leadRow}>
+                <Pressable
+                  key={lead.id}
+                  accessibilityRole="button"
+                  onPress={() => router.push(`/lead/${lead.id}`)}
+                  style={({ pressed }) => [styles.leadRow, pressed ? styles.leadRowPressed : null]}
+                  testID={`home-open-lead-${lead.id}`}
+                >
                   <View style={styles.leadRowHeader}>
                     <View style={styles.leadMeta}>
                       <Text style={styles.leadName}>{lead.buyerName}</Text>
@@ -219,66 +217,137 @@ export default function HomeScreen() {
                     <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
                   </View>
                   <Text style={styles.copy}>{lead.summary ?? "Scoring summary pending."}</Text>
-                  <ActionButton
-                    label="Open lead"
-                    tone="secondary"
-                    onPress={() => router.push(`/lead/${lead.id}`)}
-                    testID={`home-open-lead-${lead.id}`}
-                  />
-                </View>
+                </Pressable>
               ))
             )}
           </SurfaceCard>
         </>
       )}
+      <BottomSheet
+        visible={isInviteSheetOpen}
+        onClose={() => setIsInviteSheetOpen(false)}
+        title="Invite tools"
+        subtitle="Generate and hand off intake links without crowding the dashboard."
+        testID="invite-sheet"
+      >
+        {latestInviteUrl ? (
+          <>
+            <View style={styles.generatedInvite}>
+              <Text selectable style={styles.generatedInviteUrl}>
+                {latestInviteUrl}
+              </Text>
+            </View>
+            <View style={styles.actionRow}>
+              <ActionButton
+                label={isCreatingInvite ? "Creating invite..." : "Refresh invite"}
+                icon="refresh-cw"
+                onPress={() => {
+                  void handleCreateInvite()
+                }}
+                disabled={isCreatingInvite}
+                testID="invite-button"
+              />
+              <ActionButton
+                label="Copy link"
+                icon="copy"
+                tone="secondary"
+                onPress={() => {
+                  void handleCopyInvite()
+                }}
+                testID="copy-invite-button"
+              />
+              <ActionButton
+                label="Share link"
+                icon="share"
+                tone="secondary"
+                onPress={() => {
+                  void handleShareInvite()
+                }}
+                testID="share-invite-button"
+              />
+            </View>
+          </>
+        ) : (
+          <EmptyState
+            title="No link yet"
+            body="Create an intake link here, then copy or share it without leaving the dashboard."
+            actionLabel={isCreatingInvite ? "Creating invite..." : "Create invite"}
+            onAction={() => {
+              void handleCreateInvite()
+            }}
+            variant="guided"
+            eyebrow="Primary action"
+          />
+        )}
+      </BottomSheet>
     </ScreenShell>
   )
 }
 
-function MetricCard({ label, value }: { label: string; value: number | string }) {
+function MetricTile({
+  label,
+  value,
+  tone
+}: {
+  label: string
+  value: number | string
+  tone: "ready" | "appointment" | "nurture" | "hold"
+}) {
+  const palette =
+    tone === "ready"
+      ? { backgroundColor: mobileTheme.colors.readySoft, color: mobileTheme.colors.ready }
+      : tone === "appointment"
+        ? {
+            backgroundColor: mobileTheme.colors.appointmentSoft,
+            color: mobileTheme.colors.appointment
+          }
+        : tone === "nurture"
+          ? { backgroundColor: mobileTheme.colors.nurtureSoft, color: mobileTheme.colors.nurture }
+          : { backgroundColor: mobileTheme.colors.holdSoft, color: mobileTheme.colors.hold }
+
   return (
-    <View style={styles.metricCard}>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={[styles.metricTile, { backgroundColor: palette.backgroundColor }]}>
+      <Text style={[styles.metricLabel, { color: palette.color }]}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  snapshotCard: {
-    gap: 14
-  },
-  inviteCard: {
+  heroCard: {
     gap: 12
   },
-  generatedInvite: {
-    gap: 10,
-    paddingTop: 4
-  },
-  generatedInviteLabel: {
-    fontSize: 12,
+  heroValue: {
+    fontSize: 30,
+    lineHeight: 34,
     fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: mobileTheme.colors.mutedInk
+    color: mobileTheme.colors.ink
+  },
+  generatedInvite: {
+    borderRadius: mobileTheme.radii.control,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border,
+    backgroundColor: mobileTheme.colors.surfaceMuted,
+    padding: 14
   },
   generatedInviteUrl: {
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 22,
     color: mobileTheme.colors.ink
   },
   listCard: {
     gap: 14
   },
   sectionEyebrow: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 1.2,
-    color: mobileTheme.colors.accent
+    letterSpacing: 0.8,
+    color: mobileTheme.colors.brandStrong
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: mobileTheme.typography.section,
+    lineHeight: 28,
     fontWeight: "700",
     color: mobileTheme.colors.ink
   },
@@ -288,34 +357,49 @@ const styles = StyleSheet.create({
     color: mobileTheme.colors.mutedInk
   },
   metricGrid: {
-    gap: 10
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12
   },
-  metricCard: {
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
-    backgroundColor: mobileTheme.colors.surfaceStrong,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    gap: 6
+  metricTile: {
+    width: "47%",
+    minHeight: 108,
+    borderRadius: mobileTheme.radii.card,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    justifyContent: "space-between"
   },
   metricLabel: {
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: mobileTheme.colors.mutedInk
+    letterSpacing: 0.8
   },
   metricValue: {
     fontSize: 28,
+    lineHeight: 32,
     fontWeight: "700",
     color: mobileTheme.colors.ink
   },
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  listHeader: {
+    gap: 12
+  },
+  listHeaderCopy: {
+    gap: 4
+  },
   leadRow: {
     gap: 10,
-    paddingTop: 12,
+    paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: mobileTheme.colors.border
+  },
+  leadRowPressed: {
+    opacity: 0.86
   },
   leadRowHeader: {
     flexDirection: "row",
@@ -328,12 +412,14 @@ const styles = StyleSheet.create({
     gap: 4
   },
   leadName: {
-    fontSize: 18,
+    fontSize: 17,
+    lineHeight: 22,
     fontWeight: "700",
     color: mobileTheme.colors.ink
   },
   leadContact: {
     fontSize: 14,
+    lineHeight: 20,
     color: mobileTheme.colors.mutedInk
   }
 })

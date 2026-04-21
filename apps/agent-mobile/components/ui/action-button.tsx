@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text } from "react-native"
+import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Feather } from "@expo/vector-icons"
 import { mobileTheme } from "@/lib/theme"
 
 export function ActionButton({
@@ -6,13 +7,15 @@ export function ActionButton({
   onPress,
   disabled = false,
   tone = "primary",
-  testID
+  testID,
+  icon
 }: {
   label: string
   onPress: () => void
   disabled?: boolean
   tone?: "primary" | "secondary" | "danger"
   testID?: string
+  icon?: keyof typeof Feather.glyphMap
 }) {
   return (
     <Pressable
@@ -31,18 +34,33 @@ export function ActionButton({
         disabled ? styles.disabled : null
       ]}
     >
-      <Text
-        style={[
-          styles.label,
-          tone === "primary"
-            ? styles.primaryLabel
-            : tone === "danger"
-              ? styles.dangerLabel
-              : styles.secondaryLabel
-        ]}
-      >
-        {label}
-      </Text>
+      <View style={styles.content}>
+        {icon ? (
+          <Feather
+            name={icon}
+            size={16}
+            color={
+              tone === "primary"
+                ? mobileTheme.colors.inverse
+                : tone === "danger"
+                  ? mobileTheme.colors.lost
+                  : mobileTheme.colors.ink
+            }
+          />
+        ) : null}
+        <Text
+          style={[
+            styles.label,
+            tone === "primary"
+              ? styles.primaryLabel
+              : tone === "danger"
+                ? styles.dangerLabel
+                : styles.secondaryLabel
+          ]}
+        >
+          {label}
+        </Text>
+      </View>
     </Pressable>
   )
 }
@@ -57,7 +75,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   primary: {
-    backgroundColor: mobileTheme.colors.brand
+    backgroundColor: mobileTheme.colors.brand,
+    ...mobileTheme.elevation.card
   },
   secondary: {
     backgroundColor: mobileTheme.colors.surface,
@@ -69,12 +88,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: mobileTheme.colors.lostSoft
   },
+  content: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8
+  },
   label: {
     fontSize: 14,
     fontWeight: "700"
   },
   primaryLabel: {
-    color: "white"
+    color: mobileTheme.colors.inverse
   },
   secondaryLabel: {
     color: mobileTheme.colors.ink
@@ -83,9 +108,10 @@ const styles = StyleSheet.create({
     color: mobileTheme.colors.lost
   },
   pressed: {
-    opacity: 0.92
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }]
   },
   disabled: {
-    opacity: 0.55
+    opacity: 0.5
   }
 })

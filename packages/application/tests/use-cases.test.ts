@@ -94,7 +94,17 @@ describe("application use cases", () => {
     const gateway = {
       saveAppointment: vi.fn(async (input: { leadId: string }) => ({
         id: "appt-1",
-        leadId: input.leadId
+        leadId: input.leadId,
+        date: "2026-04-21",
+        startTime: "14:00",
+        status: "scheduled" as const,
+        createdAt: "2026-04-21T00:00:00.000Z",
+        lead: {
+          id: input.leadId,
+          buyerName: "Casey Client",
+          pipelineStage: "ready_to_show" as const
+        },
+        showings: []
       }))
     }
 
@@ -110,7 +120,7 @@ describe("application use cases", () => {
 
   it("delegates intake autosave, invite creation, and settings persistence", async () => {
     const intakeGateway = {
-      autosaveDraft: vi.fn(async () => ({ ok: true }))
+      autosaveDraft: vi.fn(async () => ({ ok: true as const }))
     }
     const inviteGateway = {
       createInvite: vi.fn(async () => ({
@@ -120,7 +130,7 @@ describe("application use cases", () => {
       }))
     }
     const settingsGateway = {
-      saveSettings: vi.fn(async () => ({ ok: true }))
+      saveSettings: vi.fn(async () => ({ ok: true as const }))
     }
 
     await autosaveIntakeStep(intakeGateway, "token-1", {
@@ -129,7 +139,7 @@ describe("application use cases", () => {
     const invite = await createInviteLink(inviteGateway)
     const saved = await saveSettingsProfile(settingsGateway, {
       fullName: "Casey Agent",
-      notificationPreference: "email"
+      emailNotificationsEnabled: false
     })
 
     expect(invite.token).toBe("token-1")

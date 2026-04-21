@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { StyleSheet, Switch, Text, View } from "react-native"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
@@ -13,18 +13,18 @@ type FormState = {
   fullName: string
   brokerage: string
   licenseNumber: string
-  notificationPreference: "email" | "email_and_push"
+  emailNotificationsEnabled: boolean
 }
 
 const emptyForm: FormState = {
   fullName: "",
   brokerage: "",
   licenseNumber: "",
-  notificationPreference: "email"
+  emailNotificationsEnabled: false
 }
 
 export default function SettingsScreen() {
-  const { session } = useSession()
+  const { session, signOut } = useSession()
   const api = useMobileApi()
   const [form, setForm] = useState<FormState>(emptyForm)
   const [savedForm, setSavedForm] = useState<FormState>(emptyForm)
@@ -35,6 +35,7 @@ export default function SettingsScreen() {
     message: string
   } | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(savedForm),
@@ -50,7 +51,7 @@ export default function SettingsScreen() {
         fullName: string
         brokerage?: string
         licenseNumber?: string
-        notificationPreference: "email" | "email_and_push"
+        emailNotificationsEnabled: boolean
       }) => {
         if (!isMounted) {
           return
@@ -60,7 +61,7 @@ export default function SettingsScreen() {
           fullName: settings.fullName,
           brokerage: settings.brokerage ?? "",
           licenseNumber: settings.licenseNumber ?? "",
-          notificationPreference: settings.notificationPreference
+          emailNotificationsEnabled: settings.emailNotificationsEnabled
         } satisfies FormState
 
         setForm(nextForm)
@@ -103,13 +104,13 @@ export default function SettingsScreen() {
         fullName: form.fullName.trim(),
         brokerage: form.brokerage.trim(),
         licenseNumber: form.licenseNumber.trim(),
-        notificationPreference: form.notificationPreference
+        emailNotificationsEnabled: form.emailNotificationsEnabled
       })
       const nextSaved = {
         fullName: form.fullName.trim(),
         brokerage: form.brokerage.trim(),
         licenseNumber: form.licenseNumber.trim(),
-        notificationPreference: form.notificationPreference
+        emailNotificationsEnabled: form.emailNotificationsEnabled
       }
       setForm(nextSaved)
       setSavedForm(nextSaved)
@@ -129,6 +130,23 @@ export default function SettingsScreen() {
     }
   }
 
+  async function handleSignOut() {
+    setIsSigningOut(true)
+    setMessage(null)
+
+    try {
+      await signOut()
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        title: "Unable to sign out",
+        message: error instanceof Error ? error.message : "Try again."
+      })
+    } finally {
+      setIsSigningOut(false)
+    }
+  }
+
   return (
     <ScreenShell
       title="Settings"
@@ -141,6 +159,16 @@ export default function SettingsScreen() {
         <Text style={styles.identityMeta}>
           Profile updates stay scoped to this signed-in account.
         </Text>
+        <ActionButton
+          label={isSigningOut ? "Signing out..." : "Sign out"}
+          tone="danger"
+          icon="log-out"
+          onPress={() => {
+            void handleSignOut()
+          }}
+          disabled={isSigningOut}
+          testID="settings-sign-out-button"
+        />
       </SurfaceCard>
 
       {message ? (
@@ -162,6 +190,8 @@ export default function SettingsScreen() {
             value={form.fullName}
             onChangeText={(fullName: string) => setForm((current) => ({ ...current, fullName }))}
             placeholder="Demo Agent"
+            textContentType="name"
+            autoComplete="name"
             testID="settings-full-name-input"
           />
           <FormField
@@ -169,6 +199,7 @@ export default function SettingsScreen() {
             value={form.brokerage}
             onChangeText={(brokerage: string) => setForm((current) => ({ ...current, brokerage }))}
             placeholder="Northline Realty"
+            textContentType="organizationName"
             testID="settings-brokerage-input"
           />
           <FormField
@@ -180,44 +211,24 @@ export default function SettingsScreen() {
             placeholder="SR-2026-001"
             testID="settings-license-number-input"
           />
-
-          <View style={styles.preferenceGroup}>
-            <Text style={styles.preferenceLabel}>Notification preference</Text>
-            <View style={styles.preferenceRow}>
-              {[
-                { label: "Email", value: "email" as const },
-                { label: "Email + push", value: "email_and_push" as const }
-              ].map((option) => {
-                const isSelected = form.notificationPreference === option.value
-
-                return (
-                  <Pressable
-                    key={option.value}
-                    testID={`settings-notification-${option.value}`}
-                    accessibilityRole="button"
-                    onPress={() =>
-                      setForm((current) => ({
-                        ...current,
-                        notificationPreference: option.value
-                      }))
-                    }
-                    style={[
-                      styles.preferenceChip,
-                      isSelected ? styles.preferenceChipSelected : null
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.preferenceText,
-                        isSelected ? styles.preferenceTextSelected : null
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                )
-              })}
+          <View style={styles.preferenceRow}>
+            <View style={styles.preferenceCopy}>
+              <Text style={styles.preferenceTitle}>Also send email notification</Text>
+              <Text style={styles.preferenceBody}>
+                Send an email copy when a new lead submits the generated intake form.
+              </Text>
             </View>
+            <Switch
+              testID="settings-email-notifications-toggle"
+              value={form.emailNotificationsEnabled}
+              onValueChange={(emailNotificationsEnabled: boolean) =>
+                setForm((current) => ({ ...current, emailNotificationsEnabled }))
+              }
+              trackColor={{
+                false: mobileTheme.colors.borderStrong,
+                true: mobileTheme.colors.brand
+              }}
+            />
           </View>
 
           <ActionButton
@@ -264,37 +275,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: mobileTheme.colors.ink
   },
-  preferenceGroup: {
-    gap: 10
-  },
-  preferenceLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: mobileTheme.colors.mutedInk
-  },
   preferenceRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16
   },
-  preferenceChip: {
-    borderRadius: mobileTheme.radii.pill,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
-    backgroundColor: mobileTheme.colors.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 11
+  preferenceCopy: {
+    flex: 1,
+    gap: 4
   },
-  preferenceChipSelected: {
-    borderColor: mobileTheme.colors.brand,
-    backgroundColor: mobileTheme.colors.readySoft
-  },
-  preferenceText: {
-    fontSize: 13,
+  preferenceTitle: {
+    fontSize: 14,
     fontWeight: "700",
     color: mobileTheme.colors.ink
   },
-  preferenceTextSelected: {
-    color: mobileTheme.colors.brand
+  preferenceBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: mobileTheme.colors.mutedInk
   }
 })

@@ -43,30 +43,73 @@ export const showReadyTokens = {
 
 export const mobileTheme = {
   colors: {
-    background: showReadyTokens.colors.bone,
-    surface: showReadyTokens.colors.boneRaised,
-    surfaceStrong: "#efe5d9",
-    ink: showReadyTokens.colors.ink,
-    mutedInk: showReadyTokens.colors.inkMuted,
-    border: showReadyTokens.colors.border,
-    brand: showReadyTokens.colors.cypress,
-    accent: showReadyTokens.colors.amberRed,
-    ready: showReadyTokens.colors.cypress,
-    readySoft: showReadyTokens.colors.cypressSoft,
-    appointment: "#315ba9",
-    appointmentSoft: "#e1e8fb",
-    nurture: showReadyTokens.colors.warning,
-    nurtureSoft: showReadyTokens.colors.warningSoft,
-    hold: showReadyTokens.colors.neutral,
-    holdSoft: showReadyTokens.colors.neutralSoft,
-    won: showReadyTokens.colors.success,
-    wonSoft: showReadyTokens.colors.successSoft,
-    lost: showReadyTokens.colors.danger,
-    lostSoft: showReadyTokens.colors.dangerSoft,
-    archived: showReadyTokens.colors.neutral,
-    archivedSoft: showReadyTokens.colors.neutralSoft
+    background: "#f4f7fb",
+    surface: "#ffffff",
+    surfaceStrong: "#e8eef8",
+    surfaceMuted: "#eff4fa",
+    surfaceTint: "#edf3ff",
+    ink: "#0f172a",
+    mutedInk: "#516075",
+    subtleInk: "#708096",
+    border: "#d9e3ee",
+    borderStrong: "#c3d0df",
+    brand: "#1d4ed8",
+    brandStrong: "#1e40af",
+    accent: "#f97316",
+    focus: "#93c5fd",
+    ready: "#0f766e",
+    readySoft: "#dff7f2",
+    appointment: "#4f46e5",
+    appointmentSoft: "#e9e8ff",
+    nurture: "#b45309",
+    nurtureSoft: "#fff1df",
+    hold: "#64748b",
+    holdSoft: "#edf2f7",
+    won: "#15803d",
+    wonSoft: "#e3f6ea",
+    lost: "#b91c1c",
+    lostSoft: "#fde8e8",
+    archived: "#64748b",
+    archivedSoft: "#edf2f7",
+    inverse: "#ffffff",
+    scrim: "rgba(15, 23, 42, 0.14)"
   },
-  radii: showReadyTokens.radii
+  radii: {
+    ...showReadyTokens.radii,
+    control: 18,
+    sheet: 30
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    xxl: 32
+  },
+  typography: {
+    eyebrow: 12,
+    body: 16,
+    bodySmall: 14,
+    title: 32,
+    section: 22
+  },
+  elevation: {
+    card: {
+      shadowColor: "#0f172a",
+      shadowOpacity: 0.08,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 4
+    },
+    floating: {
+      shadowColor: "#0f172a",
+      shadowOpacity: 0.12,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: 8
+    }
+  }
 } as const
 
 export function buildWebCssVariables() {

@@ -1,0 +1,74 @@
+import { render } from "@testing-library/react-native"
+import AppTabsLayout from "../app/(app)/_layout"
+
+const screenCalls: Array<{ name: string; options?: Record<string, unknown> }> = []
+
+jest.mock("../providers/session-provider", () => ({
+  useSession: jest.fn()
+}))
+
+jest.mock("expo-router", () => {
+  const React = require("react")
+  const { Text, View } = require("react-native")
+
+  function Tabs(props: { children?: React.ReactNode }) {
+    return <View>{props.children}</View>
+  }
+
+  Tabs.Screen = (props: { name: string; options?: Record<string, unknown> }) => {
+    screenCalls.push(props)
+    return null
+  }
+
+  function Redirect(props: { href: string }) {
+    return <Text testID="redirect-target">{props.href}</Text>
+  }
+
+  return { Tabs, Redirect }
+})
+
+const { useSession } = jest.requireMock("../providers/session-provider") as {
+  useSession: jest.Mock
+}
+
+describe("AppTabsLayout", () => {
+  beforeEach(() => {
+    screenCalls.length = 0
+  })
+
+  it("redirects signed-out users back to sign in", () => {
+    useSession.mockReturnValue({
+      session: null,
+      isBootstrapping: false
+    })
+
+    const screen = render(<AppTabsLayout />)
+
+    expect(screen.getByTestId("redirect-target").props.children).toBe("/(auth)/sign-in")
+  })
+
+  it("keeps the bottom navigation to four primary destinations and hides settings", () => {
+    useSession.mockReturnValue({
+      session: { user: { id: "agent-1" } },
+      isBootstrapping: false,
+      unreadNewLeadsCount: 2
+    })
+
+    render(<AppTabsLayout />)
+
+    expect(screenCalls.map((screen) => screen.name)).toEqual([
+      "home",
+      "new-leads",
+      "pipeline",
+      "appointments",
+      "settings"
+    ])
+
+    expect(screenCalls.find((screen) => screen.name === "settings")?.options).toMatchObject({
+      href: null
+    })
+    expect(screenCalls.find((screen) => screen.name === "new-leads")?.options).toMatchObject({
+      tabBarBadge: " "
+    })
+  })
+})

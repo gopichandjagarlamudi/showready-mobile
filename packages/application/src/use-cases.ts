@@ -83,7 +83,7 @@ export async function saveSettingsProfile(
     fullName: string
     brokerage?: string
     licenseNumber?: string
-    notificationPreference: "email" | "email_and_push"
+    emailNotificationsEnabled: boolean
   }
 ) {
   return gateway.saveSettings(input)

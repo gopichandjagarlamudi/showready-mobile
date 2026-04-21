@@ -48,7 +48,7 @@ type OnboardingInput = {
   brandColor: string
   accentColor: string
   showThreshold: number
-  notificationPreference: AgentSettings["notificationPreference"]
+  emailNotificationsEnabled: AgentSettings["emailNotificationsEnabled"]
   introHeadline: string
   introBody: string
   customQuestions: CustomQuestion[]
@@ -110,7 +110,7 @@ function defaultSettings(agentId: string, templateId: string) {
     brand_color: "#1F5F57",
     accent_color: "#B74D2C",
     show_threshold: 8,
-    notification_preference: "email",
+    email_notifications_enabled: false,
     question_template_id: templateId
   }
 }
@@ -230,6 +230,51 @@ export async function getAgentContext(
     template: selectedTemplate,
     templates: mappedTemplates
   }
+}
+
+export async function listAgentPushTokens(
+  client: AppSupabaseClient,
+  agentId: string
+) {
+  const { data, error } = await client
+    .from("agent_device_tokens")
+    .select("expo_push_token")
+    .eq("agent_id", agentId)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? [])
+    .map((row: { expo_push_token?: string | null }) => row.expo_push_token ?? null)
+    .filter((token): token is string => Boolean(token))
+}
+
+export async function registerAgentPushToken(
+  client: AppSupabaseClient,
+  agentId: string,
+  input: {
+    expoPushToken: string
+    platform: "ios" | "android" | "unknown"
+  }
+) {
+  const { error } = await client.from("agent_device_tokens").upsert(
+    {
+      agent_id: agentId,
+      expo_push_token: input.expoPushToken,
+      platform: input.platform,
+      last_seen_at: nowIso()
+    },
+    {
+      onConflict: "agent_id,expo_push_token"
+    }
+  )
+
+  if (error) {
+    throw error
+  }
+
+  return { ok: true as const }
 }
 
 export async function listLeads(client: AppSupabaseClient, agentId: string) {
@@ -960,7 +1005,7 @@ export async function completeOnboarding(
       brand_color: input.brandColor,
       accent_color: input.accentColor,
       show_threshold: input.showThreshold,
-      notification_preference: input.notificationPreference
+      email_notifications_enabled: input.emailNotificationsEnabled
     })
     .eq("agent_id", agentId)
 

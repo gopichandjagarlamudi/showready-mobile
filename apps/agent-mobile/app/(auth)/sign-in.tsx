@@ -1,6 +1,9 @@
 import { useState, useTransition } from "react"
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native"
+import { StyleSheet, Text } from "react-native"
 import { mobileTheme } from "@showready/design-system"
+import { ActionButton } from "../../components/ui/action-button"
+import { FormField } from "../../components/ui/form-field"
+import { SurfaceCard } from "../../components/ui/surface-card"
 import { ScreenShell } from "../../components/screen-shell"
 import { signInWithGoogle } from "../../lib/auth-oauth"
 import { supabase } from "../../lib/supabase"
@@ -39,107 +42,69 @@ export default function SignInScreen() {
   return (
     <ScreenShell
       title="Sign in"
-      subtitle="Access your mobile command center with the same ShowReady backend contract."
+      subtitle="Access the field dashboard with the same ShowReady account and keep authentication simple on mobile."
       testID="sign-in-screen"
     >
-      <View style={styles.card}>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
+      <SurfaceCard style={styles.card}>
+        <Text style={styles.kicker}>Agent access</Text>
+        <FormField
+          label="Email"
           testID="email-input"
-          accessibilityLabel="Email input"
-          style={styles.input}
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
           onChangeText={setEmail}
           placeholder="agent@example.com"
-          placeholderTextColor={mobileTheme.colors.mutedInk}
+          autoComplete="email"
+          textContentType="emailAddress"
         />
-
-        <Text style={styles.label}>Password</Text>
-        <TextInput
+        <FormField
+          label="Password"
           testID="password-input"
-          accessibilityLabel="Password input"
-          style={styles.input}
-          secureTextEntry
           value={password}
           onChangeText={setPassword}
           placeholder="Password"
-          placeholderTextColor={mobileTheme.colors.mutedInk}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="password"
+          textContentType="password"
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity
+        <ActionButton
           testID="sign-in-button"
           disabled={isPending}
-          style={styles.primaryButton}
           onPress={handleEmailSignIn}
-        >
-          <Text style={styles.primaryButtonLabel}>Sign in with email</Text>
-        </TouchableOpacity>
+          label="Sign in with email"
+          icon="log-in"
+        />
 
-        <TouchableOpacity
+        <ActionButton
           testID="google-sign-in-button"
           disabled={isPending}
-          style={styles.secondaryButton}
           onPress={handleGoogleSignIn}
-        >
-          <Text style={styles.secondaryButtonLabel}>Continue with Google</Text>
-        </TouchableOpacity>
-      </View>
+          tone="secondary"
+          label="Continue with Google"
+          icon="chrome"
+        />
+      </SurfaceCard>
     </ScreenShell>
   )
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: mobileTheme.colors.surface,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
-    padding: 20,
     gap: 12
   },
-  label: {
-    color: mobileTheme.colors.mutedInk,
-    fontSize: 13,
+  kicker: {
+    color: mobileTheme.colors.brandStrong,
+    fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.8
   },
-  input: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
-    backgroundColor: "white",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: mobileTheme.colors.ink
-  },
   error: {
-    color: mobileTheme.colors.accent
-  },
-  primaryButton: {
-    borderRadius: 999,
-    backgroundColor: mobileTheme.colors.brand,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 4
-  },
-  primaryButtonLabel: {
-    color: "white",
-    fontWeight: "700"
-  },
-  secondaryButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
-    paddingVertical: 16,
-    alignItems: "center",
-    backgroundColor: "white"
-  },
-  secondaryButtonLabel: {
-    color: mobileTheme.colors.ink,
-    fontWeight: "700"
+    color: mobileTheme.colors.lost
   }
 })

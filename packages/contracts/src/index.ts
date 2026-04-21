@@ -11,7 +11,6 @@ export type LeadStage =
   | "closed_lost"
   | "archived"
 export type Recommendation = "show" | "nurture" | "hold"
-export type NotificationPreference = "email" | "email_and_push"
 export type IntakeType = "sale" | "rental"
 export type IntakeIntent = "buy" | "rent"
 export type InviteStatus = "generated" | "opened" | "converted" | "expired"
@@ -224,7 +223,7 @@ export type AgentSettings = {
   brandColor: string
   accentColor: string
   showThreshold: number
-  notificationPreference: NotificationPreference
+  emailNotificationsEnabled: boolean
   questionTemplateId: string
 }
 
@@ -658,5 +657,5 @@ export const SettingsMutationSchema = z.object({
   fullName: z.string().min(1),
   brokerage: z.string().optional(),
   licenseNumber: z.string().optional(),
-  notificationPreference: z.enum(["email", "email_and_push"])
+  emailNotificationsEnabled: z.boolean()
 })

@@ -139,7 +139,7 @@ export function mapAgentSettings(row: {
   brand_color: string
   accent_color: string
   show_threshold: number
-  notification_preference: AgentSettings["notificationPreference"]
+  email_notifications_enabled?: boolean | null
   question_template_id: string
 }): AgentSettings {
   return {
@@ -148,7 +148,7 @@ export function mapAgentSettings(row: {
     brandColor: row.brand_color,
     accentColor: row.accent_color,
     showThreshold: row.show_threshold,
-    notificationPreference: row.notification_preference,
+    emailNotificationsEnabled: row.email_notifications_enabled ?? false,
     questionTemplateId: row.question_template_id
   }
 }

@@ -1,6 +1,7 @@
 import { makeRedirectUri } from "expo-auth-session"
 import * as QueryParams from "expo-auth-session/build/QueryParams"
 import * as WebBrowser from "expo-web-browser"
+import Constants from "expo-constants"
 import { supabase } from "./supabase"
 
 type OAuthClient = Pick<typeof supabase, "auth">
@@ -18,8 +19,14 @@ export function isAuthCallbackUrl(url: string) {
 
 export function getGoogleRedirectUrl() {
   return makeRedirectUri({
-    path: "auth/callback"
+    scheme: "showready",
+    path: "auth/callback",
+    native: "showready://auth/callback"
   })
+}
+
+export function isExpoGo() {
+  return Constants.appOwnership === "expo"
 }
 
 export async function restoreSessionFromUrl(
@@ -75,6 +82,14 @@ export async function restoreSessionFromUrl(
 export async function signInWithGoogle(
   client: OAuthClient = supabase
 ): Promise<GoogleSignInResult> {
+  if (isExpoGo()) {
+    return {
+      type: "error",
+      message:
+        "Google sign-in requires a development build or standalone app. Expo Go cannot complete OAuth redirects for this flow."
+    }
+  }
+
   const redirectTo = getGoogleRedirectUrl()
   const { data, error } = await client.auth.signInWithOAuth({
     provider: "google",

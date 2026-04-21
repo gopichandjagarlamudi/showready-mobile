@@ -7,10 +7,14 @@ export function FormField({
   onChangeText,
   placeholder,
   error,
+  helperText,
   multiline = false,
   autoCapitalize = "sentences",
   autoCorrect = true,
   keyboardType,
+  secureTextEntry = false,
+  textContentType,
+  autoComplete,
   testID
 }: {
   label: string
@@ -18,10 +22,28 @@ export function FormField({
   onChangeText: (value: string) => void
   placeholder?: string
   error?: string
+  helperText?: string
   multiline?: boolean
   autoCapitalize?: "none" | "sentences" | "words" | "characters"
   autoCorrect?: boolean
   keyboardType?: "default" | "email-address" | "numeric" | "number-pad" | "decimal-pad" | "phone-pad"
+  secureTextEntry?: boolean
+  textContentType?:
+    | "none"
+    | "name"
+    | "emailAddress"
+    | "telephoneNumber"
+    | "password"
+    | "organizationName"
+    | "username"
+  autoComplete?:
+    | "off"
+    | "name"
+    | "email"
+    | "tel"
+    | "street-address"
+    | "username"
+    | "password"
   testID?: string
 }) {
   return (
@@ -37,8 +59,12 @@ export function FormField({
         autoCapitalize={autoCapitalize}
         autoCorrect={autoCorrect}
         keyboardType={keyboardType}
+        secureTextEntry={secureTextEntry}
+        textContentType={textContentType}
+        autoComplete={autoComplete}
         style={[styles.input, multiline ? styles.multiline : null, error ? styles.inputError : null]}
       />
+      {helperText && !error ? <Text style={styles.helper}>{helperText}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   )
@@ -55,17 +81,23 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 52,
-    borderRadius: 18,
+    borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
-    backgroundColor: "white",
+    backgroundColor: mobileTheme.colors.surface,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: mobileTheme.colors.ink
+    color: mobileTheme.colors.ink,
+    fontSize: mobileTheme.typography.body
   },
   multiline: {
     minHeight: 120,
     textAlignVertical: "top"
+  },
+  helper: {
+    color: mobileTheme.colors.subtleInk,
+    fontSize: 12,
+    lineHeight: 18
   },
   inputError: {
     borderColor: mobileTheme.colors.lost

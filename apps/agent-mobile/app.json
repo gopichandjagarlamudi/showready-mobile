@@ -4,6 +4,13 @@
     "slug": "showready-native-rebuild",
     "scheme": "showready",
     "plugins": [
+      [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent"
+        }
+      ],
+      "expo-notifications",
       "expo-router",
       "expo-web-browser"
     ],

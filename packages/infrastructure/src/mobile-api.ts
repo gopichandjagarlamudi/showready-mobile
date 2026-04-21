@@ -192,7 +192,7 @@ export function createMobileApiClient({
       fullName: string
       brokerage?: string
       licenseNumber?: string
-      notificationPreference: "email" | "email_and_push"
+      emailNotificationsEnabled: boolean
     }) {
       const response = await authorizedFetch("/api/mobile/settings", {
         method: "PUT",
@@ -220,12 +220,31 @@ export function createMobileApiClient({
         fullName: string
         brokerage?: string
         licenseNumber?: string
-        notificationPreference: "email" | "email_and_push"
+        emailNotificationsEnabled: boolean
         brandName: string
         brandColor: string
         accentColor: string
         showThreshold: number
       }
+    },
+
+    async registerPushToken(input: {
+      expoPushToken: string
+      platform: "ios" | "android" | "unknown"
+    }) {
+      const response = await authorizedFetch("/api/mobile/push-tokens", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(input)
+      })
+
+      if (!response.ok) {
+        throw new MobileApiError(response.status, "Unable to register push token.")
+      }
+
+      return (await response.json()) as { ok: true }
     },
 
     async overrideLeadScore(leadId: string, input: { overrideScore: number; note: string }) {

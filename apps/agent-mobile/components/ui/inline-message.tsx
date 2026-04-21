@@ -27,7 +27,12 @@ export function InlineMessage({
           }
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.backgroundColor }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: palette.backgroundColor, borderColor: palette.color }
+      ]}
+    >
       <Text style={[styles.title, { color: palette.color }]}>{title}</Text>
       <Text style={[styles.body, { color: palette.color }]}>{message}</Text>
     </View>
@@ -37,6 +42,7 @@ export function InlineMessage({
 const styles = StyleSheet.create({
   container: {
     borderRadius: 18,
+    borderWidth: 1,
     padding: 14,
     gap: 4
   },

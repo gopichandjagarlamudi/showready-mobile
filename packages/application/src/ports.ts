@@ -54,6 +54,6 @@ export type SettingsGateway = {
     fullName: string
     brokerage?: string
     licenseNumber?: string
-    notificationPreference: "email" | "email_and_push"
+    emailNotificationsEnabled: boolean
   }): Promise<{ ok: true }>
 }

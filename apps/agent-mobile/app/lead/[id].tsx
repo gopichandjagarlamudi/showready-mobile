@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react"
 import { StyleSheet, Text, View } from "react-native"
-import { useLocalSearchParams } from "expo-router"
+import { router, useLocalSearchParams } from "expo-router"
 import type { Lead, LeadStage } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
+import { BottomSheet } from "@/components/ui/bottom-sheet"
 import { FormField } from "@/components/ui/form-field"
 import { InlineMessage } from "@/components/ui/inline-message"
 import { StageChip } from "@/components/ui/stage-chip"
 import { SurfaceCard } from "@/components/ui/surface-card"
 import { mobileTheme } from "@/lib/theme"
-import { useMobileApi } from "@/providers/session-provider"
+import { useMobileApi, useSession } from "@/providers/session-provider"
 
 const MOVE_STAGES: Array<
   Extract<
@@ -21,6 +22,7 @@ const MOVE_STAGES: Array<
 
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
+  const { workspaceVersion = 0 } = useSession()
   const api = useMobileApi()
   const [lead, setLead] = useState<Lead | null>(null)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
@@ -29,6 +31,8 @@ export default function LeadDetailScreen() {
     title: string
     message: string
   } | null>(null)
+  const [isStageSheetOpen, setIsStageSheetOpen] = useState(false)
+  const [isOverrideSheetOpen, setIsOverrideSheetOpen] = useState(false)
   const [overrideScore, setOverrideScore] = useState("")
   const [overrideNote, setOverrideNote] = useState("")
   const [busy, setBusy] = useState(false)
@@ -66,7 +70,7 @@ export default function LeadDetailScreen() {
     return () => {
       isMounted = false
     }
-  }, [api, id])
+  }, [api, id, workspaceVersion])
 
   const answerSections = useMemo(() => {
     if (!lead?.answers) {
@@ -127,6 +131,7 @@ export default function LeadDetailScreen() {
     try {
       const result = await api.moveLead(lead.id, stage)
       setLead(result.lead)
+      setIsStageSheetOpen(false)
       setMessage({
         tone: "success",
         title: "Lead updated",
@@ -167,6 +172,9 @@ export default function LeadDetailScreen() {
         note: overrideNote.trim()
       })
       setLead(result.lead)
+      setOverrideScore("")
+      setOverrideNote("")
+      setIsOverrideSheetOpen(false)
       setMessage({
         tone: "success",
         title: "Override saved",
@@ -183,12 +191,28 @@ export default function LeadDetailScreen() {
     }
   }
 
+  function handleBack() {
+    if (router.canGoBack()) {
+      router.back()
+      return
+    }
+
+    router.replace("/(app)/home")
+  }
+
   return (
     <ScreenShell
       title={lead?.buyerName ?? "Lead detail"}
       subtitle="Review scoring context, move the lead through the pipeline, and preserve manual overrides with notes."
       testID="lead-detail-screen"
     >
+      <ActionButton
+        label="Back to leads"
+        tone="secondary"
+        onPress={handleBack}
+        testID="lead-back-button"
+      />
+
       {message ? (
         <InlineMessage tone={message.tone} title={message.title} message={message.message} />
       ) : null}
@@ -236,50 +260,35 @@ export default function LeadDetailScreen() {
 
           <SurfaceCard>
             <Text style={styles.sectionTitle}>Move lead</Text>
-            <View style={styles.actions}>
-              {MOVE_STAGES.map((stage) => (
-                <ActionButton
-                  key={stage}
-                  label={stage.replaceAll("_", " ")}
-                  tone={stage === lead.pipelineStage ? "primary" : "secondary"}
-                  onPress={() => {
-                    void moveLead(stage)
-                  }}
-                  disabled={busy}
-                  testID={`lead-move-${stage}`}
-                />
-              ))}
+            <View style={styles.actionStack}>
+              <ActionButton
+                label="Change stage"
+                icon="sliders"
+                onPress={() => setIsStageSheetOpen(true)}
+                disabled={busy}
+                testID="lead-open-stage-sheet-button"
+              />
+              <Text style={styles.copy}>
+                Current stage: {lead.pipelineStage.replaceAll("_", " ")}
+              </Text>
             </View>
           </SurfaceCard>
 
           <SurfaceCard>
             <Text style={styles.sectionTitle}>Override score</Text>
-            <FormField
-              label="Override score"
-              value={overrideScore}
-              onChangeText={setOverrideScore}
-              placeholder="9.0"
-              keyboardType="decimal-pad"
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="lead-override-score-input"
-            />
-            <FormField
-              label="Override note"
-              value={overrideNote}
-              onChangeText={setOverrideNote}
-              placeholder="Why this score should change"
-              multiline
-              testID="lead-override-note-input"
-            />
-            <ActionButton
-              label={busy ? "Saving override..." : "Save override"}
-              onPress={() => {
-                void saveOverride()
-              }}
-              disabled={busy}
-              testID="lead-save-override-button"
-            />
+            <View style={styles.actionStack}>
+              <Text style={styles.copy}>
+                Keep manual score changes deliberate and documented.
+              </Text>
+              <ActionButton
+                label="Adjust score"
+                tone="secondary"
+                icon="edit-3"
+                onPress={() => setIsOverrideSheetOpen(true)}
+                disabled={busy}
+                testID="lead-open-override-sheet-button"
+              />
+            </View>
           </SurfaceCard>
 
           {answerSections.map((section) => (
@@ -295,6 +304,62 @@ export default function LeadDetailScreen() {
           ))}
         </>
       )}
+      <BottomSheet
+        visible={isStageSheetOpen}
+        onClose={() => setIsStageSheetOpen(false)}
+        title="Move lead"
+        subtitle="Update the stage without expanding the main detail page."
+        testID="lead-stage-sheet"
+      >
+        <View style={styles.actions}>
+          {MOVE_STAGES.map((stage) => (
+            <ActionButton
+              key={stage}
+              label={stage.replaceAll("_", " ")}
+              tone={stage === lead?.pipelineStage ? "primary" : "secondary"}
+              onPress={() => {
+                void moveLead(stage)
+              }}
+              disabled={busy}
+              testID={`lead-move-${stage}`}
+            />
+          ))}
+        </View>
+      </BottomSheet>
+      <BottomSheet
+        visible={isOverrideSheetOpen}
+        onClose={() => setIsOverrideSheetOpen(false)}
+        title="Override score"
+        subtitle="Use only when the automated recommendation needs explicit agent context."
+        testID="lead-override-sheet"
+      >
+        <FormField
+          label="Override score"
+          value={overrideScore}
+          onChangeText={setOverrideScore}
+          placeholder="9.0"
+          keyboardType="decimal-pad"
+          autoCapitalize="none"
+          autoCorrect={false}
+          testID="lead-override-score-input"
+        />
+        <FormField
+          label="Override note"
+          value={overrideNote}
+          onChangeText={setOverrideNote}
+          placeholder="Why this score should change"
+          multiline
+          testID="lead-override-note-input"
+        />
+        <ActionButton
+          label={busy ? "Saving override..." : "Save override"}
+          onPress={() => {
+            void saveOverride()
+          }}
+          disabled={busy}
+          testID="lead-save-override-button"
+        />
+      </BottomSheet>
     </ScreenShell>
   )
 }
@@ -373,6 +438,9 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     flexWrap: "wrap",
+    gap: 10
+  },
+  actionStack: {
     gap: 10
   },
   answerRow: {

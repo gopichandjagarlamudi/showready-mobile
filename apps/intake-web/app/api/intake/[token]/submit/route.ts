@@ -2,10 +2,10 @@ import { NextResponse } from "next/server"
 import { submitIntakeDraft } from "@showready/application"
 import type { IntakeDraft } from "@showready/contracts"
 import { trackServerEvent } from "@/lib/analytics"
-import { sendLeadScoredEmail } from "@/lib/notifications"
+import { sendLeadScoredEmail, sendLeadScoredPushNotifications } from "@/lib/notifications"
 import { captureServerError } from "@/lib/observability"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
-import { getAgentContext, submitInvite } from "@/lib/supabase/data"
+import { getAgentContext, listAgentPushTokens, submitInvite } from "@/lib/supabase/data"
 import { buildAppUrl } from "@/lib/utils"
 
 export async function POST(
@@ -25,8 +25,19 @@ export async function POST(
       payload.draft
     )
     const context = await getAgentContext(supabase, lead.agentId)
+    const pushTokens = await listAgentPushTokens(supabase, lead.agentId)
 
-    if (context?.agent.email) {
+    await sendLeadScoredPushNotifications({
+      expoPushTokens: pushTokens,
+      title: "New lead submitted",
+      body: `${lead.buyerName} just submitted the intake form.`,
+      data: {
+        leadId: lead.id,
+        route: "/(app)/new-leads"
+      }
+    })
+
+    if (context?.agent.email && context.settings.emailNotificationsEnabled) {
       await sendLeadScoredEmail({
         to: context.agent.email,
         agentName: context.agent.fullName,

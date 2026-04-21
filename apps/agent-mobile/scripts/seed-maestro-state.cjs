@@ -197,7 +197,7 @@ async function seedAgentScaffold(client, agentId) {
     brand_color: "#0F766E",
     accent_color: "#A16207",
     show_threshold: 8,
-    notification_preference: "email",
+    email_notifications_enabled: false,
     question_template_id: SALE_TEMPLATE_ID
   })
 
