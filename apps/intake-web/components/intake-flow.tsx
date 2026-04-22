@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import type {
   IntakeDraft,
   QuestionDefinition,
@@ -114,7 +114,6 @@ export function IntakeFlow({
   const [index, setIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const touchActionRef = useRef<"skip" | null>(null)
 
   const activeTemplate = draft.intent === "rent" ? rentalTemplate : saleTemplate
   const resolvedRequiredQuestions = draft.intent
@@ -250,7 +249,7 @@ export function IntakeFlow({
   }
 
   function handleSkip() {
-    if (current.required || isLastStep) {
+    if (current.required) {
       return
     }
 
@@ -260,20 +259,6 @@ export function IntakeFlow({
     }
 
     persist(draft)
-  }
-
-  function runSkipFromTouch() {
-    touchActionRef.current = "skip"
-    handleSkip()
-  }
-
-  function runSkipFromClick() {
-    if (touchActionRef.current === "skip") {
-      touchActionRef.current = null
-      return
-    }
-
-    handleSkip()
   }
 
   return (
@@ -470,10 +455,6 @@ export function IntakeFlow({
           <div style={{ display: "flex", gap: 12 }}>
             <button
               type="submit"
-              onTouchEnd={(event) => {
-                event.preventDefault()
-                handleAdvance()
-              }}
               disabled={isPending}
               style={{
                 flex: 1,
@@ -485,16 +466,12 @@ export function IntakeFlow({
                 cursor: "pointer"
               }}
             >
-              {isLastStep ? "Submit" : "Continue"}
+              {isPending ? (isLastStep ? "Submitting..." : "Saving...") : isLastStep ? "Submit" : "Continue"}
             </button>
             {!current.required ? (
               <button
                 type="button"
-                onTouchEnd={(event) => {
-                  event.preventDefault()
-                  runSkipFromTouch()
-                }}
-                onClick={runSkipFromClick}
+                onClick={handleSkip}
                 disabled={isPending}
                 style={{
                   borderRadius: 999,

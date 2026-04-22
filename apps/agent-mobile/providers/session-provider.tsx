@@ -7,6 +7,12 @@ import type { Session } from "@supabase/supabase-js"
 import { router } from "expo-router"
 import { createMobileApiClient } from "@showready/infrastructure"
 import { restoreSessionFromUrl } from "../lib/auth-oauth"
+import {
+  captureDiagnosticsError,
+  flushDiagnostics,
+  reportApiRequestError,
+  setDiagnosticsApiClient
+} from "../lib/diagnostics/service"
 import { getApiBaseUrl } from "../lib/env"
 import { supabase } from "../lib/supabase"
 
@@ -15,6 +21,7 @@ type SessionContextValue = {
   isBootstrapping: boolean
   workspaceVersion: number
   unreadNewLeadsCount: number
+  refreshWorkspace: () => void
   signOut: () => Promise<void>
 }
 
@@ -34,21 +41,47 @@ export function SessionProvider({ children }: PropsWithChildren) {
         getAccessToken: async () => {
           const { data } = await supabase.auth.getSession()
           return data.session?.access_token ?? null
+        },
+        onRequestError: (input) => {
+          void reportApiRequestError(input)
         }
       }),
     []
   )
 
+  function refreshWorkspace() {
+    setWorkspaceVersion((current) => current + 1)
+  }
+
   useEffect(() => {
+    setDiagnosticsApiClient(api)
+    void flushDiagnostics()
+
+    return () => {
+      setDiagnosticsApiClient(null)
+    }
+  }, [api])
+
+  useEffect(() => {
+    const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
+      const route = notification.request.content.data?.route
+
+      if (route === "/(app)/new-leads") {
+        refreshWorkspace()
+      }
+    })
+
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const route = response.notification.request.content.data?.route
 
       if (route === "/(app)/new-leads") {
+        refreshWorkspace()
         router.push("/new-leads")
       }
     })
 
     return () => {
+      receivedSubscription.remove()
       subscription.remove()
     }
   }, [])
@@ -63,8 +96,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
         if (initialUrl) {
           try {
             await restoreSessionFromUrl(initialUrl)
-          } catch {
-            // Ignore malformed callback URLs and keep the current session state.
+          } catch (error) {
+            void captureDiagnosticsError(error, {
+              eventType: "auth.event",
+              category: "auth",
+              severity: "warning",
+              context: {
+                phase: "initial-url"
+              }
+            })
           }
         }
 
@@ -75,6 +115,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
         }
 
         setSession(data.session)
+      } catch (error) {
+        if (isMounted) {
+          setSession(null)
+        }
+
+        void captureDiagnosticsError(error, {
+          eventType: "error.handled",
+          category: "error",
+          severity: "error",
+          context: {
+            source: "session-bootstrap"
+          }
+        })
       } finally {
         if (isMounted) {
           setIsBootstrapping(false)
@@ -92,8 +145,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
     const linkingSubscription = Linking.addEventListener("url", async ({ url }) => {
       try {
         await restoreSessionFromUrl(url)
-      } catch {
-        // Ignore callback noise and rely on the existing session state.
+      } catch (error) {
+        void captureDiagnosticsError(error, {
+          eventType: "auth.event",
+          category: "auth",
+          severity: "warning",
+          context: {
+            phase: "linking-listener"
+          }
+        })
       }
     })
 
@@ -211,8 +271,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
                 ? "android"
                 : "unknown"
         })
-      } catch {
-        // Notification registration should never block app usage.
+      } catch (error) {
+        void captureDiagnosticsError(error, {
+          eventType: "notification.event",
+          category: "notification",
+          severity: "warning",
+          context: {
+            source: "register-push-token"
+          }
+        })
       }
     }
 
@@ -227,6 +294,14 @@ export function SessionProvider({ children }: PropsWithChildren) {
     const { error } = await supabase.auth.signOut()
 
     if (error) {
+      void captureDiagnosticsError(error, {
+        eventType: "auth.event",
+        category: "auth",
+        severity: "error",
+        context: {
+          action: "sign-out"
+        }
+      })
       throw error
     }
 
@@ -235,7 +310,14 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
   return (
     <SessionContext.Provider
-      value={{ session, isBootstrapping, workspaceVersion, unreadNewLeadsCount, signOut }}
+      value={{
+        session,
+        isBootstrapping,
+        workspaceVersion,
+        unreadNewLeadsCount,
+        refreshWorkspace,
+        signOut
+      }}
     >
       <MobileApiContext.Provider value={api}>{children}</MobileApiContext.Provider>
     </SessionContext.Provider>

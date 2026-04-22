@@ -22,9 +22,11 @@ const mockRegisterPushToken = jest.fn()
 const mockGetPermissionsAsync = jest.fn()
 const mockRequestPermissionsAsync = jest.fn()
 const mockGetExpoPushTokenAsync = jest.fn()
+const mockAddNotificationReceivedListener = jest.fn()
 const mockAddNotificationResponseReceivedListener = jest.fn()
 const mockRouterPush = jest.fn()
 let notificationResponseListener: ((response: any) => void) | null = null
+let notificationReceivedListener: ((response: any) => void) | null = null
 
 jest.mock("@showready/infrastructure", () => ({
   createMobileApiClient: jest.fn(() => ({
@@ -38,6 +40,8 @@ jest.mock("expo-notifications", () => ({
   getPermissionsAsync: (...args: unknown[]) => mockGetPermissionsAsync(...args),
   requestPermissionsAsync: (...args: unknown[]) => mockRequestPermissionsAsync(...args),
   getExpoPushTokenAsync: (...args: unknown[]) => mockGetExpoPushTokenAsync(...args),
+  addNotificationReceivedListener: (...args: unknown[]) =>
+    mockAddNotificationReceivedListener(...args),
   addNotificationResponseReceivedListener: (...args: unknown[]) =>
     mockAddNotificationResponseReceivedListener(...args)
 }))
@@ -135,6 +139,13 @@ describe("SessionProvider realtime refresh", () => {
     mockRequestPermissionsAsync.mockResolvedValue({ status: "granted" })
     mockGetExpoPushTokenAsync.mockReset()
     mockGetExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[test]" })
+    mockAddNotificationReceivedListener.mockReset()
+    mockAddNotificationReceivedListener.mockImplementation((listener) => {
+      notificationReceivedListener = listener
+      return {
+        remove: jest.fn()
+      }
+    })
     mockAddNotificationResponseReceivedListener.mockReset()
     mockAddNotificationResponseReceivedListener.mockImplementation((listener) => {
       notificationResponseListener = listener
@@ -143,6 +154,8 @@ describe("SessionProvider realtime refresh", () => {
       }
     })
     mockRouterPush.mockReset()
+    notificationReceivedListener = null
+    notificationResponseListener = null
   })
 
   it("bumps workspace version when a lead realtime event arrives", async () => {
@@ -208,5 +221,45 @@ describe("SessionProvider realtime refresh", () => {
     })
 
     expect(mockRouterPush).toHaveBeenCalledWith("/new-leads")
+  })
+
+  it("refreshes workspace state when a new-lead notification arrives in the foreground", async () => {
+    mockListNewLeads.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "lead-fresh" }])
+
+    const screen = render(
+      <SessionProvider>
+        <SessionValueProbe />
+      </SessionProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("unread-new-leads").props.children).toBe(0)
+    })
+
+    await waitFor(() => {
+      expect(mockAddNotificationReceivedListener).toHaveBeenCalledTimes(1)
+    })
+
+    const receivedCallback = mockAddNotificationReceivedListener.mock.calls[0]?.[0]
+
+    await act(async () => {
+      receivedCallback?.({
+        request: {
+          content: {
+            data: {
+              route: "/(app)/new-leads"
+            }
+          }
+        }
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("workspace-version").props.children).toBe(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("unread-new-leads").props.children).toBe(1)
+    })
   })
 })

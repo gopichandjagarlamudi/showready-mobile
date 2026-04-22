@@ -19,3 +19,31 @@ jest.mock("expo-notifications", () => ({
     remove: jest.fn()
   }))
 }))
+
+jest.mock("@react-native-async-storage/async-storage", () => {
+  const values = new Map<string, string>()
+
+  return {
+    __esModule: true,
+    default: {
+      getItem: jest.fn(async (key: string) => values.get(key) ?? null),
+      setItem: jest.fn(async (key: string, value: string) => {
+        values.set(key, value)
+      }),
+      removeItem: jest.fn(async (key: string) => {
+        values.delete(key)
+      })
+    }
+  }
+})
+
+jest.mock("expo-constants", () => ({
+  __esModule: true,
+  default: {
+    expoConfig: {
+      version: "0.1.0"
+    },
+    nativeAppVersion: "0.1.0",
+    nativeBuildVersion: "1"
+  }
+}))

@@ -22,7 +22,7 @@ function suggestedReviewStage(lead: Lead): ReviewStage {
 }
 
 export default function NewLeadsScreen() {
-  const { session, workspaceVersion = 0 } = useSession()
+  const { session, workspaceVersion = 0, refreshWorkspace } = useSession()
   const api = useMobileApi()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
@@ -68,6 +68,7 @@ export default function NewLeadsScreen() {
     try {
       await api.reviewLead(leadId, stage)
       setLeads((current) => current.filter((lead) => lead.id !== leadId))
+      refreshWorkspace()
     } catch (error) {
       setMessages((current) => ({
         ...current,
@@ -85,7 +86,6 @@ export default function NewLeadsScreen() {
   return (
     <ScreenShell
       title="New leads"
-      subtitle="Fresh submissions wait here until you confirm the suggested direction or deliberately reroute them."
       testID="new-leads-screen"
     >
       {loadState === "loading" ? (

@@ -19,6 +19,8 @@
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.1.1",
+    "@react-native-async-storage/async-storage": "^3.0.2",
+    "@react-native-community/datetimepicker": "8.4.4",
     "@showready/contracts": "workspace:*",
     "@showready/design-system": "workspace:*",
     "@showready/infrastructure": "workspace:*",

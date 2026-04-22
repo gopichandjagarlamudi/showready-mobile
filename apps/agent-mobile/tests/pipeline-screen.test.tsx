@@ -1,4 +1,4 @@
-import { fireEvent, render, within } from "@testing-library/react-native"
+import { fireEvent, render, waitFor } from "@testing-library/react-native"
 import PipelineScreen from "../app/(app)/pipeline"
 
 jest.mock("../providers/session-provider", () => ({
@@ -165,27 +165,71 @@ describe("PipelineScreen", () => {
     })
   })
 
-  it("renders active and resolved leads inside explicit category sections", async () => {
+  it("filters leads through the category picker instead of rendering every section inline", async () => {
     const screen = render(<PipelineScreen />)
 
-    expect(await screen.findByTestId("pipeline-section-ready_to_show")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-section-nurture")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-section-hold")).toBeTruthy()
+    expect(
+      screen.queryByText(
+        "Search the current lane, switch categories from one mobile-friendly picker, and keep stage moves close to the lead card."
+      )
+    ).toBeNull()
 
-    const readySection = screen.getByTestId("pipeline-section-ready_to_show")
-    expect(within(readySection).getByText("Riley Ready")).toBeTruthy()
-    expect(within(readySection).getByText("Avery Booked")).toBeTruthy()
-    expect(within(readySection).queryByText("Nico Nurture")).toBeNull()
+    expect(await screen.findByTestId("pipeline-card-lead-ready")).toBeTruthy()
+    expect(screen.getByTestId("pipeline-card-lead-booked")).toBeTruthy()
+    expect(screen.getByTestId("pipeline-card-lead-nurture")).toBeTruthy()
+    expect(screen.getByTestId("pipeline-card-lead-hold")).toBeTruthy()
+    expect(screen.queryByTestId("pipeline-card-lead-won")).toBeNull()
+
+    fireEvent.press(screen.getByTestId("pipeline-open-category-sheet"))
+    expect(screen.getByTestId("pipeline-category-sheet")).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("pipeline-category-option-nurture"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-card-lead-nurture")).toBeTruthy()
+    })
+    expect(screen.queryByTestId("pipeline-card-lead-ready")).toBeNull()
+    expect(screen.queryByTestId("pipeline-card-lead-booked")).toBeNull()
+    expect(screen.queryByTestId("pipeline-card-lead-hold")).toBeNull()
 
     fireEvent.press(screen.getByTestId("pipeline-tab-resolved"))
 
-    expect(await screen.findByTestId("pipeline-section-closed_won")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-section-closed_lost")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-section-archived")).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-card-lead-won")).toBeTruthy()
+    })
+    expect(screen.getByTestId("pipeline-card-lead-lost")).toBeTruthy()
+    expect(screen.getByTestId("pipeline-card-lead-archived")).toBeTruthy()
+    expect(screen.queryByTestId("pipeline-card-lead-nurture")).toBeNull()
 
-    expect(within(screen.getByTestId("pipeline-section-closed_won")).getByText("Casey Won")).toBeTruthy()
-    expect(within(screen.getByTestId("pipeline-section-closed_lost")).getByText("Logan Lost")).toBeTruthy()
-    expect(within(screen.getByTestId("pipeline-section-archived")).getByText("Sky Archived")).toBeTruthy()
+    fireEvent.press(screen.getByTestId("pipeline-open-category-sheet"))
+    fireEvent.press(screen.getByTestId("pipeline-category-option-archived"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-card-lead-archived")).toBeTruthy()
+    })
+    expect(screen.queryByTestId("pipeline-card-lead-won")).toBeNull()
+    expect(screen.queryByTestId("pipeline-card-lead-lost")).toBeNull()
+  })
+
+  it("filters the visible pipeline list with search and shows a helpful empty state", async () => {
+    const screen = render(<PipelineScreen />)
+
+    expect(await screen.findByTestId("pipeline-search-input")).toBeTruthy()
+
+    fireEvent.changeText(screen.getByTestId("pipeline-search-input"), "avery")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-card-lead-booked")).toBeTruthy()
+    })
+    expect(screen.queryByTestId("pipeline-card-lead-ready")).toBeNull()
+    expect(screen.queryByTestId("pipeline-card-lead-nurture")).toBeNull()
+
+    fireEvent.changeText(screen.getByTestId("pipeline-search-input"), "missing")
+
+    await waitFor(() => {
+      expect(screen.getByText("No leads match this search yet.")).toBeTruthy()
+    })
+    expect(screen.getByText("Try a name, email, phone number, or a broader category.")).toBeTruthy()
   })
 
   it("opens a stage picker instead of rendering all move actions inline", async () => {
@@ -201,6 +245,14 @@ describe("PipelineScreen", () => {
 
     fireEvent.press(screen.getByTestId("pipeline-move-lead-ready-closed_won"))
 
-    expect(moveLead).toHaveBeenCalledWith("lead-ready", "closed_won")
+    await waitFor(() => {
+      expect(moveLead).toHaveBeenCalledWith("lead-ready", "closed_won")
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-card-lead-ready")).toBeNull()
+    })
+
+    expect(screen.getByText("Moved Riley Ready to closed won.")).toBeTruthy()
   })
 })

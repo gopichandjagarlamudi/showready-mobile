@@ -63,6 +63,12 @@ describe("HomeScreen", () => {
   it("shows the generated invite link and copies it from the dashboard", async () => {
     const screen = render(<HomeScreen />)
 
+    expect(
+      screen.queryByText(
+        "One mobile command center for invite creation, live pipeline health, and fast access to the leads that need action first."
+      )
+    ).toBeNull()
+
     fireEvent.press(await screen.findByTestId("invite-sheet-open-button"))
     fireEvent.press(await screen.findByText("Create invite"))
 

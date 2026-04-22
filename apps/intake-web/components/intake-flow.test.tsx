@@ -22,6 +22,53 @@ const rentalTemplate = {
   customQuestions: []
 }
 
+async function advanceUntilQuestion(label: string) {
+  for (let index = 0; index < 25; index += 1) {
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Continue" }) ??
+          screen.queryByRole("button", { name: "Submit" })
+      ).toBeTruthy()
+    })
+
+    if (screen.queryByText(label)) {
+      return
+    }
+
+    const currentQuestion = screen.getByRole("heading", { level: 2 }).textContent ?? ""
+    const textbox = screen.queryByRole("textbox")
+
+    if (textbox) {
+      fireEvent.change(textbox, {
+        target: {
+          value: textbox.getAttribute("type") === "email" ? `buyer.${index}@example.com` : `Answer ${index + 1}`
+        }
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(currentQuestion)
+      })
+      continue
+    }
+
+    const optionButton = screen
+      .queryAllByRole("button")
+      .find((button) => !["Continue", "Skip", "Submit"].includes(button.textContent ?? ""))
+
+    if (!optionButton) {
+      throw new Error(`Could not determine how to advance toward "${label}".`)
+    }
+
+    fireEvent.click(optionButton)
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(currentQuestion)
+    })
+  }
+
+  throw new Error(`Did not reach "${label}" within the expected number of steps.`)
+}
+
 describe("IntakeFlow", () => {
   const fetchMock = vi.fn()
   const assignMock = vi.fn()
@@ -136,5 +183,73 @@ describe("IntakeFlow", () => {
     expect(
       screen.getByText("Are you looking to buy for yourself or as an investment?")
     ).toBeTruthy()
+  })
+
+  it("submits when the last optional question is skipped", async () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={{
+          ...saleTemplate,
+          customQuestions: [
+            {
+              id: "timing",
+              label: "When do you want to move?",
+              helperText: "Skip if you are still flexible.",
+              required: false,
+              type: "text"
+            }
+          ]
+        }}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Taylor Verify" }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Step 2 of 5")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Step 3 of 5")).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "taylor@example.com" }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Step 4 of 5")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Buying a property" }))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await advanceUntilQuestion("When do you want to move?")
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        "/api/intake/invite-token/submit",
+        expect.objectContaining({
+          method: "POST"
+        })
+      )
+    })
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith("/intake/invite-token/complete")
+    })
   })
 })

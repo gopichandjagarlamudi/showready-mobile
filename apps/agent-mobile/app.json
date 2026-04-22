@@ -3,6 +3,7 @@
     "name": "ShowReady",
     "slug": "showready-native-rebuild",
     "scheme": "showready",
+    "icon": "./assets/app-icon.png",
     "plugins": [
       [
         "expo-dev-client",
@@ -18,10 +19,20 @@
       "typedRoutes": true
     },
     "android": {
-      "package": "com.anonymous.showreadynativerebuild"
+      "package": "com.showready.mobile"
     },
     "ios": {
-      "bundleIdentifier": "com.anonymous.showready-native-rebuild"
-    }
+      "bundleIdentifier": "com.showready.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4c5b8450-3f56-419a-aa0c-990e93d99086"
+      }
+    },
+    "owner": "gopi_chand"
   }
 }

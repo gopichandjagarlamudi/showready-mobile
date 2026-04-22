@@ -659,3 +659,129 @@ export const SettingsMutationSchema = z.object({
   licenseNumber: z.string().optional(),
   emailNotificationsEnabled: z.boolean()
 })
+
+export type DiagnosticsSeverity = "debug" | "info" | "warning" | "error" | "fatal"
+export type DiagnosticsCategory =
+  | "api"
+  | "error"
+  | "auth"
+  | "navigation"
+  | "action"
+  | "notification"
+  | "diagnostics"
+  | "crash"
+export type DiagnosticsEventType =
+  | "crash.inferred"
+  | "error.unhandled"
+  | "error.handled"
+  | "api.failure"
+  | "auth.event"
+  | "navigation.screen"
+  | "action.event"
+  | "notification.event"
+  | "diagnostics.internal"
+export type DiagnosticsPlatform = "ios" | "android" | "web" | "unknown"
+export type DiagnosticsMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | DiagnosticsMetadataValue[]
+  | { [key: string]: DiagnosticsMetadataValue }
+export type DiagnosticsMetadata = Record<string, DiagnosticsMetadataValue>
+export type DiagnosticsBreadcrumb = {
+  timestamp: string
+  type: string
+  message: string
+  data?: DiagnosticsMetadata
+}
+
+export const DiagnosticsSeveritySchema = z.enum(["debug", "info", "warning", "error", "fatal"])
+export const DiagnosticsCategorySchema = z.enum([
+  "api",
+  "error",
+  "auth",
+  "navigation",
+  "action",
+  "notification",
+  "diagnostics",
+  "crash"
+])
+export const DiagnosticsEventTypeSchema = z.enum([
+  "crash.inferred",
+  "error.unhandled",
+  "error.handled",
+  "api.failure",
+  "auth.event",
+  "navigation.screen",
+  "action.event",
+  "notification.event",
+  "diagnostics.internal"
+])
+export const DiagnosticsPlatformSchema = z.enum(["ios", "android", "web", "unknown"])
+
+export const DiagnosticsMetadataValueSchema: z.ZodType<DiagnosticsMetadataValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(DiagnosticsMetadataValueSchema),
+    z.record(z.string(), DiagnosticsMetadataValueSchema)
+  ])
+)
+
+export const DiagnosticsMetadataSchema: z.ZodType<DiagnosticsMetadata> = z.record(
+  z.string(),
+  DiagnosticsMetadataValueSchema
+)
+
+export const DiagnosticsBreadcrumbSchema = z.object({
+  timestamp: z.string().datetime(),
+  type: z.string().min(1),
+  message: z.string().min(1),
+  data: DiagnosticsMetadataSchema.optional()
+})
+
+export const DiagnosticsEventSchema = z.object({
+  id: z.string().uuid(),
+  sessionId: z.string().min(1),
+  deviceId: z.string().min(1),
+  occurredAt: z.string().datetime(),
+  eventType: DiagnosticsEventTypeSchema,
+  category: DiagnosticsCategorySchema,
+  severity: DiagnosticsSeveritySchema,
+  message: z.string().min(1),
+  fingerprint: z.string().min(1).optional(),
+  screen: z.string().min(1).optional(),
+  appVersion: z.string().min(1).optional(),
+  buildNumber: z.string().min(1).optional(),
+  platform: DiagnosticsPlatformSchema,
+  requestPath: z.string().min(1).optional(),
+  httpStatus: z.number().int().min(100).max(599).optional(),
+  leadId: z.string().min(1).optional(),
+  appointmentId: z.string().min(1).optional(),
+  pipelineStage: z.string().min(1).optional(),
+  context: DiagnosticsMetadataSchema.default({}),
+  breadcrumbs: z.array(DiagnosticsBreadcrumbSchema).max(50).default([]),
+  tags: DiagnosticsMetadataSchema.default({})
+})
+
+export type DiagnosticsEvent = z.infer<typeof DiagnosticsEventSchema>
+
+export const DiagnosticsBatchSchema = z.object({
+  events: z
+    .array(DiagnosticsEventSchema)
+    .min(1, "Diagnostics batch must contain at least one event.")
+    .max(50, "Diagnostics batch cannot contain more than 50 events.")
+})
+
+export type DiagnosticsBatch = z.infer<typeof DiagnosticsBatchSchema>
+
+export const DiagnosticsBatchResponseSchema = z.object({
+  acceptedCount: z.number().int().nonnegative(),
+  rejectedCount: z.number().int().nonnegative(),
+  rejectedEventIds: z.array(z.string())
+})
+
+export type DiagnosticsBatchResponse = z.infer<typeof DiagnosticsBatchResponseSchema>

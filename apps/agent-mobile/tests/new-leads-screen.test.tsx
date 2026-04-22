@@ -1,4 +1,5 @@
-import { render, waitFor } from "@testing-library/react-native"
+import { fireEvent, render, waitFor } from "@testing-library/react-native"
+import type { Lead } from "@showready/contracts"
 import NewLeadsScreen from "../app/(app)/new-leads"
 
 jest.mock("../providers/session-provider", () => ({
@@ -19,22 +20,59 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
 
 describe("NewLeadsScreen", () => {
   let workspaceVersion = 0
+  const refreshWorkspace = jest.fn()
+  const reviewQueueLead: Lead = {
+    id: "lead-ready",
+    agentId: "agent-1",
+    buyerName: "Riley Ready",
+    buyerEmail: "riley@example.com",
+    intakeType: "sale",
+    token: "invite-ready",
+    tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+    status: "submitted",
+    pipelineStage: "new",
+    submittedAt: "2026-04-20T12:00:00.000Z",
+    recommendation: "show",
+    summary: "Ready to tour.",
+    createdAt: "2026-04-20T12:00:00.000Z",
+    updatedAt: "2026-04-20T12:00:00.000Z"
+  }
   const session = {
     user: {
       id: "agent-1"
     }
   }
   const api = {
-    listNewLeads: jest.fn(async () => [])
+    listNewLeads: jest.fn<Promise<Lead[]>, [string]>(async () => []),
+    reviewLead: jest.fn(async (leadId: string, stage: string) => ({
+      lead: {
+        id: leadId,
+        agentId: "agent-1",
+        buyerName: "Riley Ready",
+        buyerEmail: "riley@example.com",
+        token: "invite-ready",
+        tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+        status: "submitted",
+        pipelineStage: stage,
+        submittedAt: "2026-04-20T12:00:00.000Z",
+        recommendation: "show",
+        summary: "Ready to tour.",
+        createdAt: "2026-04-20T12:00:00.000Z",
+        updatedAt: "2026-04-20T12:00:00.000Z"
+      }
+    }))
   }
 
   beforeEach(() => {
     workspaceVersion = 0
     api.listNewLeads.mockClear()
+    api.reviewLead.mockClear()
+    refreshWorkspace.mockReset()
 
     useSession.mockImplementation(() => ({
       session,
-      workspaceVersion
+      workspaceVersion,
+      refreshWorkspace
     }))
 
     useMobileApi.mockImplementation(() => api)
@@ -42,6 +80,12 @@ describe("NewLeadsScreen", () => {
 
   it("reloads the review queue when the workspace refresh version changes", async () => {
     const screen = render(<NewLeadsScreen />)
+
+    expect(
+      screen.queryByText(
+        "Fresh submissions wait here until you confirm the suggested direction or deliberately reroute them."
+      )
+    ).toBeNull()
 
     await waitFor(() => {
       expect(api.listNewLeads).toHaveBeenCalledTimes(1)
@@ -52,6 +96,22 @@ describe("NewLeadsScreen", () => {
 
     await waitFor(() => {
       expect(api.listNewLeads).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it("refreshes the shared workspace badge state after a lead review succeeds", async () => {
+    api.listNewLeads.mockResolvedValueOnce([reviewQueueLead])
+
+    const screen = render(<NewLeadsScreen />)
+
+    fireEvent.press(await screen.findByTestId("review-confirm-lead-ready"))
+
+    await waitFor(() => {
+      expect(api.reviewLead).toHaveBeenCalledWith("lead-ready", "ready_to_show")
+    })
+
+    await waitFor(() => {
+      expect(refreshWorkspace).toHaveBeenCalledTimes(1)
     })
   })
 })

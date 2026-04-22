@@ -14,3 +14,4 @@ apps/agent-mobile/android
 apps/agent-mobile/.expo
 apps/agent-mobile/.env.local
 apps/intake-web/.env.local
+.vercel

@@ -28,6 +28,7 @@ import {
   resolveTemplateForIntakeType,
   scoreLead
 } from "@showready/domain"
+import type { DiagnosticsEvent } from "@showready/contracts"
 import {
   mapAgentProfile,
   mapAgentSettings,
@@ -1362,5 +1363,59 @@ export async function submitInvite(
       }
     ),
     settings: refreshed.settings
+  }
+}
+
+export async function recordDiagnosticEvents(
+  client: AppSupabaseClient,
+  agentId: string,
+  events: DiagnosticsEvent[]
+) {
+  if (events.length === 0) {
+    return {
+      acceptedCount: 0,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    }
+  }
+
+  const rows = events.map((event) => ({
+    id: event.id,
+    agent_id: agentId,
+    device_id: event.deviceId,
+    session_id: event.sessionId,
+    event_type: event.eventType,
+    category: event.category,
+    severity: event.severity,
+    message: event.message,
+    fingerprint: event.fingerprint ?? null,
+    screen: event.screen ?? null,
+    app_version: event.appVersion ?? null,
+    build_number: event.buildNumber ?? null,
+    platform: event.platform,
+    request_path: event.requestPath ?? null,
+    http_status: event.httpStatus ?? null,
+    lead_id: event.leadId ?? null,
+    appointment_id: event.appointmentId ?? null,
+    pipeline_stage: event.pipelineStage ?? null,
+    context: event.context,
+    breadcrumbs: event.breadcrumbs,
+    tags: event.tags,
+    occurred_at: event.occurredAt
+  }))
+
+  const { error } = await client.from("diagnostic_events").upsert(rows, {
+    onConflict: "id",
+    ignoreDuplicates: true
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    acceptedCount: events.length,
+    rejectedCount: 0,
+    rejectedEventIds: []
   }
 }

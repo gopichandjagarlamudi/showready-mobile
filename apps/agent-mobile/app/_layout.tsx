@@ -1,10 +1,56 @@
-import { Stack } from "expo-router"
+import { useEffect } from "react"
+import { AppState } from "react-native"
+import { Stack, usePathname } from "expo-router"
+import { DiagnosticsErrorBoundary } from "../lib/diagnostics/error-boundary"
+import {
+  flushDiagnostics,
+  initializeDiagnostics,
+  markDiagnosticsScreen,
+  pauseDiagnosticsSession,
+  resumeDiagnosticsSession
+} from "../lib/diagnostics/service"
 import { SessionProvider } from "../providers/session-provider"
 
 export default function RootLayout() {
+  const pathname = usePathname()
+
+  useEffect(() => {
+    void initializeDiagnostics()
+
+    const appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void resumeDiagnosticsSession()
+        return
+      }
+
+      if (nextState === "inactive" || nextState === "background") {
+        void pauseDiagnosticsSession()
+      }
+    })
+
+    const flushInterval = setInterval(() => {
+      void flushDiagnostics()
+    }, 30000)
+
+    return () => {
+      appStateSubscription.remove()
+      clearInterval(flushInterval)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!pathname) {
+      return
+    }
+
+    void markDiagnosticsScreen(pathname)
+  }, [pathname])
+
   return (
-    <SessionProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </SessionProvider>
+    <DiagnosticsErrorBoundary>
+      <SessionProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </SessionProvider>
+    </DiagnosticsErrorBoundary>
   )
 }

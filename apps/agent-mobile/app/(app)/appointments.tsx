@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react"
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import DateTimePicker from "@react-native-community/datetimepicker"
+import { useDeferredValue, useEffect, useMemo, useState } from "react"
+import { Feather } from "@expo/vector-icons"
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import type { Appointment, Lead } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
@@ -14,6 +16,55 @@ import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
 type AppointmentStatusFilter = "scheduled" | "completed" | "cancelled"
+type AppointmentPicker = "date" | "time" | null
+
+function padNumber(value: number) {
+  return String(value).padStart(2, "0")
+}
+
+function formatApiDate(value: Date) {
+  return `${value.getFullYear()}-${padNumber(value.getMonth() + 1)}-${padNumber(value.getDate())}`
+}
+
+function formatApiTime(value: Date) {
+  return `${padNumber(value.getHours())}:${padNumber(value.getMinutes())}`
+}
+
+function formatDateLabel(value: Date | null) {
+  if (!value) {
+    return "Choose a date"
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(value)
+}
+
+function formatTimeLabel(value: Date | null) {
+  if (!value) {
+    return "Choose a time"
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(value)
+}
+
+function matchesLeadSearch(lead: Lead, query: string) {
+  if (!query) {
+    return true
+  }
+
+  return [lead.buyerName, lead.buyerEmail, lead.buyerPhone]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes(query)
+}
 
 export default function AppointmentsScreen() {
   const { session, workspaceVersion = 0 } = useSession()
@@ -21,11 +72,14 @@ export default function AppointmentsScreen() {
   const [status, setStatus] = useState<AppointmentStatusFilter>("scheduled")
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
+  const [leadSearchQuery, setLeadSearchQuery] = useState("")
+  const deferredLeadSearchQuery = useDeferredValue(leadSearchQuery.trim().toLowerCase())
   const [selectedLeadId, setSelectedLeadId] = useState("")
-  const [date, setDate] = useState("")
-  const [startTime, setStartTime] = useState("")
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [selectedTime, setSelectedTime] = useState<Date | null>(null)
   const [showingAddress, setShowingAddress] = useState("")
   const [notes, setNotes] = useState("")
+  const [activePicker, setActivePicker] = useState<AppointmentPicker>(null)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
   const [message, setMessage] = useState<{
     tone: "success" | "warning" | "error"
@@ -39,6 +93,10 @@ export default function AppointmentsScreen() {
   const eligibleLeads = useMemo(
     () => leads.filter((lead) => ["ready_to_show", "nurture", "hold"].includes(lead.pipelineStage)),
     [leads]
+  )
+  const filteredEligibleLeads = useMemo(
+    () => eligibleLeads.filter((lead) => matchesLeadSearch(lead, deferredLeadSearchQuery)),
+    [deferredLeadSearchQuery, eligibleLeads]
   )
 
   async function loadData(nextStatus = status) {
@@ -69,7 +127,7 @@ export default function AppointmentsScreen() {
   }, [session, status, workspaceVersion])
 
   async function handleSave() {
-    if (!selectedLeadId || !date.trim() || !startTime.trim() || !showingAddress.trim()) {
+    if (!selectedLeadId || !selectedDate || !selectedTime || !showingAddress.trim()) {
       setMessage({
         tone: "warning",
         title: "Missing appointment details",
@@ -84,16 +142,18 @@ export default function AppointmentsScreen() {
     try {
       await api.saveAppointment({
         leadId: selectedLeadId,
-        date: date.trim(),
-        startTime: startTime.trim(),
+        date: formatApiDate(selectedDate),
+        startTime: formatApiTime(selectedTime),
         notes: notes.trim(),
         showings: [{ address: showingAddress.trim() }]
       })
+      setLeadSearchQuery("")
       setSelectedLeadId("")
-      setDate("")
-      setStartTime("")
+      setSelectedDate(null)
+      setSelectedTime(null)
       setShowingAddress("")
       setNotes("")
+      setActivePicker(null)
       setIsScheduleSheetOpen(false)
       setMessage({
         tone: "success",
@@ -139,10 +199,30 @@ export default function AppointmentsScreen() {
     }
   }
 
+  function handlePickerChange(nextPicker: Exclude<AppointmentPicker, null>) {
+    return (_event: { type?: string }, nextValue?: Date) => {
+      if (_event?.type === "dismissed" || !nextValue) {
+        if (Platform.OS !== "ios") {
+          setActivePicker(null)
+        }
+        return
+      }
+
+      if (nextPicker === "date") {
+        setSelectedDate(nextValue)
+      } else {
+        setSelectedTime(nextValue)
+      }
+
+      if (Platform.OS !== "ios") {
+        setActivePicker(null)
+      }
+    }
+  }
+
   return (
     <ScreenShell
       title="Appointments"
-      subtitle="Keep scheduling and queue review separate so every appointment task is clear on a phone-sized screen."
       testID="appointments-screen"
     >
       <SurfaceCard style={styles.schedulePromptCard}>
@@ -246,15 +326,39 @@ export default function AppointmentsScreen() {
         subtitle="Pick the lead first, then fill the minimal showing details."
         testID="appointments-schedule-sheet"
       >
+        <View style={styles.searchGroup}>
+          <Text style={styles.fieldLabel}>Search leads</Text>
+          <View style={styles.searchInputShell}>
+            <Feather name="search" size={16} color={mobileTheme.colors.mutedInk} />
+            <TextInput
+              testID="appointment-lead-search-input"
+              value={leadSearchQuery}
+              onChangeText={setLeadSearchQuery}
+              placeholder="Search by name, email, or phone"
+              placeholderTextColor={mobileTheme.colors.mutedInk}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              style={styles.searchInput}
+            />
+          </View>
+        </View>
+
         {eligibleLeads.length === 0 ? (
           <InlineMessage
             tone="warning"
             title="No eligible leads"
             message="Move a lead into Ready, Nurture, or Hold before scheduling from mobile."
           />
+        ) : filteredEligibleLeads.length === 0 ? (
+          <InlineMessage
+            tone="warning"
+            title="No leads match this search"
+            message="Try a different name, email, phone number, or clear the search."
+          />
         ) : (
           <View style={styles.leadPicker}>
-            {eligibleLeads.map((lead) => {
+            {filteredEligibleLeads.map((lead) => {
               const isSelected = selectedLeadId === lead.id
 
               return (
@@ -286,26 +390,75 @@ export default function AppointmentsScreen() {
           </View>
         )}
 
-        <FormField
-          label="Date"
-          value={date}
-          onChangeText={setDate}
-          placeholder="2026-04-24"
-          helperText="Use the local showing date."
-          autoCapitalize="none"
-          autoCorrect={false}
-          testID="appointment-date-input"
-        />
-        <FormField
-          label="Start time"
-          value={startTime}
-          onChangeText={setStartTime}
-          placeholder="14:30"
-          helperText="24-hour time keeps entries consistent."
-          autoCapitalize="none"
-          autoCorrect={false}
-          testID="appointment-start-time-input"
-        />
+        <View style={styles.pickerGroup}>
+          <Text style={styles.fieldLabel}>Date</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open appointment date picker"
+            onPress={() => setActivePicker((current) => (current === "date" ? null : "date"))}
+            style={({ pressed }) => [styles.pickerField, pressed ? styles.pressed : null]}
+            testID="appointment-open-date-picker"
+          >
+            <View style={styles.pickerFieldCopy}>
+              <Text style={styles.pickerValue}>{formatDateLabel(selectedDate)}</Text>
+              <Text style={styles.pickerHint}>Use the local showing date.</Text>
+            </View>
+            <Feather name="calendar" size={18} color={mobileTheme.colors.mutedInk} />
+          </Pressable>
+          {activePicker === "date" ? (
+            <View style={styles.nativePickerShell}>
+              <DateTimePicker
+                testID="appointment-native-date-picker"
+                mode="date"
+                value={selectedDate ?? new Date()}
+                onChange={handlePickerChange("date")}
+              />
+              {Platform.OS === "ios" ? (
+                <ActionButton
+                  label="Done with date"
+                  tone="secondary"
+                  onPress={() => setActivePicker(null)}
+                  testID="appointment-close-date-picker"
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.pickerGroup}>
+          <Text style={styles.fieldLabel}>Start time</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open appointment time picker"
+            onPress={() => setActivePicker((current) => (current === "time" ? null : "time"))}
+            style={({ pressed }) => [styles.pickerField, pressed ? styles.pressed : null]}
+            testID="appointment-open-time-picker"
+          >
+            <View style={styles.pickerFieldCopy}>
+              <Text style={styles.pickerValue}>{formatTimeLabel(selectedTime)}</Text>
+              <Text style={styles.pickerHint}>Use the native clock to avoid manual typing.</Text>
+            </View>
+            <Feather name="clock" size={18} color={mobileTheme.colors.mutedInk} />
+          </Pressable>
+          {activePicker === "time" ? (
+            <View style={styles.nativePickerShell}>
+              <DateTimePicker
+                testID="appointment-native-time-picker"
+                mode="time"
+                value={selectedTime ?? new Date()}
+                onChange={handlePickerChange("time")}
+              />
+              {Platform.OS === "ios" ? (
+                <ActionButton
+                  label="Done with time"
+                  tone="secondary"
+                  onPress={() => setActivePicker(null)}
+                  testID="appointment-close-time-picker"
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
         <FormField
           label="First showing address"
           value={showingAddress}
@@ -359,6 +512,34 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: mobileTheme.colors.mutedInk
   },
+  searchGroup: {
+    gap: 8
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    color: mobileTheme.colors.subtleInk
+  },
+  searchInputShell: {
+    minHeight: 52,
+    borderRadius: mobileTheme.radii.control,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border,
+    backgroundColor: mobileTheme.colors.surface,
+    paddingLeft: 14,
+    paddingRight: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 52,
+    color: mobileTheme.colors.ink,
+    fontSize: mobileTheme.typography.body
+  },
   leadPicker: {
     gap: 10
   },
@@ -396,6 +577,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: mobileTheme.colors.mutedInk
+  },
+  pickerGroup: {
+    gap: 8
+  },
+  pickerField: {
+    minHeight: 72,
+    borderRadius: mobileTheme.radii.control,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border,
+    backgroundColor: mobileTheme.colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  pickerFieldCopy: {
+    flex: 1,
+    gap: 4
+  },
+  pickerValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: mobileTheme.colors.ink
+  },
+  pickerHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: mobileTheme.colors.mutedInk
+  },
+  nativePickerShell: {
+    borderRadius: mobileTheme.radii.control,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border,
+    backgroundColor: mobileTheme.colors.surfaceMuted,
+    padding: 12,
+    gap: 10
   },
   card: {
     gap: 14
@@ -446,5 +665,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10
+  },
+  pressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.99 }]
   }
 })

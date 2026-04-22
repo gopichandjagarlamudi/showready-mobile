@@ -6,6 +6,7 @@ import { FormField } from "../../components/ui/form-field"
 import { SurfaceCard } from "../../components/ui/surface-card"
 import { ScreenShell } from "../../components/screen-shell"
 import { signInWithGoogle } from "../../lib/auth-oauth"
+import { captureDiagnosticsError } from "../../lib/diagnostics/service"
 import { supabase } from "../../lib/supabase"
 
 export default function SignInScreen() {
@@ -23,6 +24,14 @@ export default function SignInScreen() {
       })
 
       if (signInError) {
+        void captureDiagnosticsError(signInError, {
+          eventType: "auth.event",
+          category: "auth",
+          severity: "error",
+          context: {
+            method: "password"
+          }
+        })
         setError(signInError.message)
       }
     })
@@ -34,6 +43,14 @@ export default function SignInScreen() {
       const result = await signInWithGoogle()
 
       if (result.type === "error") {
+        void captureDiagnosticsError(new Error(result.message), {
+          eventType: "auth.event",
+          category: "auth",
+          severity: "error",
+          context: {
+            method: "google"
+          }
+        })
         setError(result.message)
       }
     })

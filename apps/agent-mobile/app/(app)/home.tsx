@@ -128,7 +128,6 @@ export default function HomeScreen() {
   return (
     <ScreenShell
       title="Field dashboard"
-      subtitle="One mobile command center for invite creation, live pipeline health, and fast access to the leads that need action first."
       headerAction={{
         icon: "settings",
         label: "Open settings",
