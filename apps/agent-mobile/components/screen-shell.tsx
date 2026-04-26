@@ -60,8 +60,6 @@ export function ScreenShell({
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea} testID={testID}>
       <View style={styles.screen}>
-        <View style={styles.glowPrimary} pointerEvents="none" />
-        <View style={styles.glowSecondary} pointerEvents="none" />
         {scrollable ? (
           <ScrollView
             contentContainerStyle={[styles.content, contentStyle]}
@@ -88,9 +86,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingTop: 16,
     paddingBottom: 132,
-    gap: 24
+    gap: 22
   },
   hero: {
     gap: 10
@@ -103,15 +101,15 @@ const styles = StyleSheet.create({
   },
   eyebrowPill: {
     borderRadius: mobileTheme.radii.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     backgroundColor: mobileTheme.colors.surfaceTint,
     borderWidth: 1,
-    borderColor: mobileTheme.colors.border
+    borderColor: mobileTheme.colors.borderStrong
   },
   eyebrow: {
     color: mobileTheme.colors.brandStrong,
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     textTransform: "uppercase",
     fontWeight: "700",
     fontSize: mobileTheme.typography.eyebrow
@@ -134,34 +132,16 @@ const styles = StyleSheet.create({
   title: {
     color: mobileTheme.colors.ink,
     fontSize: mobileTheme.typography.title,
-    lineHeight: 38,
-    fontWeight: "700"
+    lineHeight: 40,
+    fontWeight: "800"
   },
   subtitle: {
     color: mobileTheme.colors.mutedInk,
-    fontSize: mobileTheme.typography.body,
-    lineHeight: 24,
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 21,
     maxWidth: 560
   },
   body: {
     gap: 16
-  },
-  glowPrimary: {
-    position: "absolute",
-    top: -80,
-    left: -54,
-    width: 210,
-    height: 210,
-    borderRadius: 999,
-    backgroundColor: "rgba(37, 99, 235, 0.10)"
-  },
-  glowSecondary: {
-    position: "absolute",
-    right: -48,
-    top: 40,
-    width: 180,
-    height: 180,
-    borderRadius: 999,
-    backgroundColor: "rgba(249, 115, 22, 0.10)"
   }
 })

@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from "react"
+import { useRef, type PropsWithChildren } from "react"
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Feather } from "@expo/vector-icons"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -18,6 +18,49 @@ export function BottomSheet({
   subtitle?: string
   testID?: string
 }>) {
+  const dragStartY = useRef<number | null>(null)
+  const dragCurrentY = useRef<number | null>(null)
+
+  function getGestureY(event: { nativeEvent?: { pageY?: number; locationY?: number } }) {
+    return event.nativeEvent?.pageY ?? event.nativeEvent?.locationY ?? null
+  }
+
+  function resetSheetDrag() {
+    dragStartY.current = null
+    dragCurrentY.current = null
+  }
+
+  function handleTouchStart(event: { nativeEvent?: { pageY?: number; locationY?: number } }) {
+    const nextY = getGestureY(event)
+    dragStartY.current = nextY
+    dragCurrentY.current = nextY
+  }
+
+  function handleMoveShouldSetResponder(event: { nativeEvent?: { pageY?: number; locationY?: number } }) {
+    const startY = dragStartY.current
+    const nextY = getGestureY(event)
+
+    if (startY === null || nextY === null) {
+      return false
+    }
+
+    return nextY - startY > 12
+  }
+
+  function handleResponderMove(event: { nativeEvent?: { pageY?: number; locationY?: number } }) {
+    dragCurrentY.current = getGestureY(event)
+  }
+
+  function handleResponderRelease(event: { nativeEvent?: { pageY?: number; locationY?: number } }) {
+    const startY = dragStartY.current
+    const endY = dragCurrentY.current ?? getGestureY(event)
+    resetSheetDrag()
+
+    if (startY !== null && endY !== null && endY - startY > 72) {
+      onClose()
+    }
+  }
+
   return (
     <Modal
       animationType="slide"
@@ -28,7 +71,15 @@ export function BottomSheet({
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} testID={testID ? `${testID}-backdrop` : undefined} />
         <SafeAreaView edges={["bottom"]} style={styles.safeArea}>
-          <View style={styles.sheet} testID={testID}>
+          <View
+            style={styles.sheet}
+            testID={testID}
+            onTouchStart={handleTouchStart}
+            onMoveShouldSetResponder={handleMoveShouldSetResponder}
+            onResponderMove={handleResponderMove}
+            onResponderRelease={handleResponderRelease}
+            onResponderTerminate={resetSheetDrag}
+          >
             <View style={styles.handle} />
             <View style={styles.headerRow}>
               <View style={styles.header}>
@@ -103,12 +154,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: mobileTheme.typography.section,
-    lineHeight: 28,
-    fontWeight: "700",
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: mobileTheme.typography.bodySmall,
     lineHeight: 21,
     color: mobileTheme.colors.mutedInk
   },

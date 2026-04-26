@@ -68,6 +68,21 @@ describe("SettingsScreen", () => {
     await screen.findByTestId("settings-save-button")
 
     expect(screen.getByText("Also send email notification")).toBeTruthy()
+    expect(
+      screen.queryByText(
+        "Keep your mobile profile clean and accurate without carrying the full desktop admin surface."
+      )
+    ).toBeNull()
+    expect(screen.queryByText("Signed in identity")).toBeNull()
+    expect(
+      screen.queryByText("Profile updates stay scoped to this signed-in account.")
+    ).toBeNull()
+    expect(screen.queryByText("Profile maintenance")).toBeNull()
+    expect(
+      screen.queryByText(
+        "Send an email copy when a new lead submits the generated intake form."
+      )
+    ).toBeNull()
 
     fireEvent(screen.getByTestId("settings-email-notifications-toggle"), "valueChange", true)
     fireEvent.press(screen.getByTestId("settings-save-button"))

@@ -203,7 +203,6 @@ export default function LeadDetailScreen() {
   return (
     <ScreenShell
       title={lead?.buyerName ?? "Lead detail"}
-      subtitle="Review scoring context, move the lead through the pipeline, and preserve manual overrides with notes."
       testID="lead-detail-screen"
     >
       <ActionButton
@@ -388,7 +387,7 @@ function formatDate(value: string) {
 
 const styles = StyleSheet.create({
   heroCard: {
-    gap: 12
+    gap: 16
   },
   heroHeader: {
     flexDirection: "row",
@@ -401,43 +400,44 @@ const styles = StyleSheet.create({
     gap: 4
   },
   name: {
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: "700",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   contact: {
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 20,
     color: mobileTheme.colors.mutedInk
   },
   submitted: {
-    fontSize: 13,
+    fontSize: 14,
+    lineHeight: 20,
     color: mobileTheme.colors.mutedInk
   },
   score: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   summary: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.mutedInk
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: mobileTheme.typography.section,
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   copy: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.mutedInk
   },
   actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10
   },
   actionStack: {
@@ -451,14 +451,14 @@ const styles = StyleSheet.create({
   },
   answerLabel: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 1,
-    color: mobileTheme.colors.accent
+    letterSpacing: 0,
+    color: mobileTheme.colors.brandStrong
   },
   answerValue: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.ink
   }
 })

@@ -2,6 +2,7 @@ import { makeRedirectUri } from "expo-auth-session"
 import * as QueryParams from "expo-auth-session/build/QueryParams"
 import * as WebBrowser from "expo-web-browser"
 import Constants from "expo-constants"
+import { getApiBaseUrl } from "./env"
 import { supabase } from "./supabase"
 
 type OAuthClient = Pick<typeof supabase, "auth">
@@ -18,6 +19,10 @@ export function isAuthCallbackUrl(url: string) {
 }
 
 export function getGoogleRedirectUrl() {
+  return new URL("/auth/mobile-callback", getApiBaseUrl()).toString()
+}
+
+export function getNativeAuthCallbackUrl() {
   return makeRedirectUri({
     scheme: "showready",
     path: "auth/callback",
@@ -91,6 +96,7 @@ export async function signInWithGoogle(
   }
 
   const redirectTo = getGoogleRedirectUrl()
+  const nativeCallbackUrl = getNativeAuthCallbackUrl()
   const { data, error } = await client.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -106,7 +112,7 @@ export async function signInWithGoogle(
     }
   }
 
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo)
+  const result = await WebBrowser.openAuthSessionAsync(data.url, nativeCallbackUrl)
 
   if (result.type === "cancel" || result.type === "dismiss") {
     return { type: "cancel" }

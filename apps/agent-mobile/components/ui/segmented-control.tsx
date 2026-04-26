@@ -5,15 +5,17 @@ export function SegmentedControl<T extends string>({
   value,
   options,
   onChange,
-  testIDPrefix
+  testIDPrefix,
+  variant = "pill"
 }: {
   value: T
   options: Array<{ label: string; value: T }>
   onChange: (value: T) => void
   testIDPrefix?: string
+  variant?: "pill" | "tabs"
 }) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, variant === "tabs" ? styles.tabsContainer : null]}>
       {options.map((option) => {
         const isSelected = option.value === value
 
@@ -26,11 +28,19 @@ export function SegmentedControl<T extends string>({
             testID={testIDPrefix ? `${testIDPrefix}-${option.value}` : undefined}
             style={({ pressed }) => [
               styles.option,
-              isSelected ? styles.optionSelected : null,
+              variant === "tabs" ? styles.tabOption : null,
+              isSelected && variant === "pill" ? styles.optionSelected : null,
+              isSelected && variant === "tabs" ? styles.tabOptionSelected : null,
               pressed ? styles.optionPressed : null
             ]}
           >
-            <Text style={[styles.label, isSelected ? styles.labelSelected : null]}>
+            <Text
+              style={[
+                styles.label,
+                isSelected && variant === "pill" ? styles.labelSelected : null,
+                isSelected && variant === "tabs" ? styles.tabLabelSelected : null
+              ]}
+            >
               {option.label}
             </Text>
           </Pressable>
@@ -43,38 +53,53 @@ export function SegmentedControl<T extends string>({
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
-    gap: 8,
+    gap: 0,
     padding: 6,
-    borderRadius: mobileTheme.radii.card,
+    borderRadius: mobileTheme.radii.pill,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
-    backgroundColor: mobileTheme.colors.surfaceMuted
+    backgroundColor: mobileTheme.colors.surface
+  },
+  tabsContainer: {
+    padding: 6,
+    borderRadius: mobileTheme.radii.card,
+    backgroundColor: mobileTheme.colors.surface,
+    gap: 4
   },
   option: {
     flex: 1,
-    minHeight: 44,
-    borderRadius: mobileTheme.radii.control,
+    minHeight: 54,
+    borderRadius: mobileTheme.radii.pill,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
     paddingVertical: 10
   },
   optionSelected: {
-    backgroundColor: mobileTheme.colors.surface,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.borderStrong
+    backgroundColor: mobileTheme.colors.brand
+  },
+  tabOption: {
+    borderRadius: mobileTheme.radii.control
+  },
+  tabOptionSelected: {
+    backgroundColor: mobileTheme.colors.surfaceTint,
+    borderBottomWidth: 3,
+    borderBottomColor: mobileTheme.colors.brand
   },
   optionPressed: {
     opacity: 0.88
   },
   label: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
     color: mobileTheme.colors.mutedInk,
     textAlign: "center"
   },
   labelSelected: {
-    color: mobileTheme.colors.ink
+    color: mobileTheme.colors.inverse
+  },
+  tabLabelSelected: {
+    color: mobileTheme.colors.brandStrong
   }
 })

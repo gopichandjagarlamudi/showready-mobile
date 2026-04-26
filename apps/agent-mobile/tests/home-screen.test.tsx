@@ -30,11 +30,17 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
 const { setStringAsync } = jest.requireMock("expo-clipboard") as {
   setStringAsync: jest.Mock
 }
+const { router } = jest.requireMock("expo-router") as {
+  router: {
+    push: jest.Mock
+  }
+}
 
 describe("HomeScreen", () => {
   beforeEach(() => {
     mockShare.mockReset()
     setStringAsync.mockReset()
+    router.push.mockReset()
     useSession.mockReturnValue({
       session: {
         user: {
@@ -68,8 +74,21 @@ describe("HomeScreen", () => {
         "One mobile command center for invite creation, live pipeline health, and fast access to the leads that need action first."
       )
     ).toBeNull()
+    await screen.findByTestId("invite-sheet-open-button")
+    expect(
+      screen.queryByText("The four most recent submissions stay within thumb reach.")
+    ).toBeNull()
 
-    fireEvent.press(await screen.findByTestId("invite-sheet-open-button"))
+    fireEvent.press(screen.getByTestId("invite-sheet-open-button"))
+    expect(
+      screen.queryByText("Generate and hand off intake links without crowding the dashboard.")
+    ).toBeNull()
+    expect(screen.queryByText("Create a fresh intake link")).toBeNull()
+    expect(
+      screen.queryByText(
+        "Hand it to a lead now, then copy or share the generated URL from this same sheet."
+      )
+    ).toBeNull()
     fireEvent.press(await screen.findByText("Create invite"))
 
     await screen.findByText("https://showready.example.com/intake/invite-token")
@@ -83,5 +102,34 @@ describe("HomeScreen", () => {
         "https://showready.example.com/intake/invite-token"
       )
     })
+  })
+
+  it("opens invite tools with the create action immediately available", async () => {
+    const screen = render(<HomeScreen />)
+
+    fireEvent.press(await screen.findByTestId("invite-sheet-open-button"))
+
+    expect(await screen.findByTestId("invite-button")).toBeTruthy()
+    expect(screen.queryByText("No link yet")).toBeNull()
+  })
+
+  it("routes from the dashboard metric tiles to their work areas", async () => {
+    const screen = render(<HomeScreen />)
+
+    const metricRail = await screen.findByTestId("home-metric-rail")
+    expect(metricRail.props.horizontal).toBe(true)
+
+    fireEvent.press(await screen.findByTestId("home-metric-ready"))
+    expect(router.push).toHaveBeenCalledWith("/pipeline")
+
+    fireEvent.press(screen.getByTestId("home-metric-booked"))
+    expect(router.push).toHaveBeenCalledWith("/appointments")
+  })
+
+  it("uses an inline recent-activity empty state instead of nesting cards", async () => {
+    const screen = render(<HomeScreen />)
+
+    expect(await screen.findByTestId("home-recent-empty")).toBeTruthy()
+    expect(screen.queryByText("First run")).toBeNull()
   })
 })

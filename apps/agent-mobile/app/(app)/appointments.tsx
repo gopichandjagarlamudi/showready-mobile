@@ -66,6 +66,10 @@ function matchesLeadSearch(lead: Lead, query: string) {
     .includes(query)
 }
 
+function getLeadRecency(lead: Lead) {
+  return lead.updatedAt ?? lead.createdAt ?? lead.submittedAt ?? ""
+}
+
 export default function AppointmentsScreen() {
   const { session, workspaceVersion = 0 } = useSession()
   const api = useMobileApi()
@@ -94,10 +98,20 @@ export default function AppointmentsScreen() {
     () => leads.filter((lead) => ["ready_to_show", "nurture", "hold"].includes(lead.pipelineStage)),
     [leads]
   )
+  const leadSearchIsActive = leadSearchQuery.trim().length > 0
   const filteredEligibleLeads = useMemo(
     () => eligibleLeads.filter((lead) => matchesLeadSearch(lead, deferredLeadSearchQuery)),
     [deferredLeadSearchQuery, eligibleLeads]
   )
+  const suggestedReadyLeads = useMemo(
+    () =>
+      eligibleLeads
+        .filter((lead) => lead.pipelineStage === "ready_to_show")
+        .sort((left, right) => getLeadRecency(right).localeCompare(getLeadRecency(left)))
+        .slice(0, 3),
+    [eligibleLeads]
+  )
+  const visibleLeadOptions = leadSearchIsActive ? filteredEligibleLeads : suggestedReadyLeads
 
   async function loadData(nextStatus = status) {
     if (!session) {
@@ -226,12 +240,6 @@ export default function AppointmentsScreen() {
       testID="appointments-screen"
     >
       <SurfaceCard style={styles.schedulePromptCard}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Scheduling tools</Text>
-          <Text style={styles.copy}>
-            Keep the main screen focused on the queue, then open scheduling only when you need it.
-          </Text>
-        </View>
         <ActionButton
           label="Schedule showing"
           icon="calendar"
@@ -252,6 +260,7 @@ export default function AppointmentsScreen() {
           { label: "Completed", value: "completed" },
           { label: "Cancelled", value: "cancelled" }
         ]}
+        variant="tabs"
         testIDPrefix="appointments-tab"
       />
 
@@ -267,6 +276,7 @@ export default function AppointmentsScreen() {
           onAction={() => setIsScheduleSheetOpen(true)}
           variant="guided"
           eyebrow="Start here"
+          icon="calendar"
         />
       ) : (
         appointments.map((appointment) => (
@@ -323,7 +333,6 @@ export default function AppointmentsScreen() {
         visible={isScheduleSheetOpen}
         onClose={() => setIsScheduleSheetOpen(false)}
         title="Create appointment"
-        subtitle="Pick the lead first, then fill the minimal showing details."
         testID="appointments-schedule-sheet"
       >
         <View style={styles.searchGroup}>
@@ -350,15 +359,28 @@ export default function AppointmentsScreen() {
             title="No eligible leads"
             message="Move a lead into Ready, Nurture, or Hold before scheduling from mobile."
           />
-        ) : filteredEligibleLeads.length === 0 ? (
-          <InlineMessage
-            tone="warning"
-            title="No leads match this search"
-            message="Try a different name, email, phone number, or clear the search."
-          />
+        ) : visibleLeadOptions.length === 0 ? (
+          leadSearchIsActive ? (
+            <EmptyState
+              title="No leads match this search"
+              body="Try a different name, email, phone number, or clear the search."
+              actionLabel="Clear search"
+              actionTestID="appointment-clear-lead-search"
+              onAction={() => setLeadSearchQuery("")}
+              variant="guided"
+              eyebrow="Search"
+              icon="search"
+            />
+          ) : (
+            <InlineMessage
+              tone="warning"
+              title="No ready leads to suggest"
+              message="Search by name, email, or phone to schedule another eligible lead."
+            />
+          )
         ) : (
           <View style={styles.leadPicker}>
-            {filteredEligibleLeads.map((lead) => {
+            {visibleLeadOptions.map((lead) => {
               const isSelected = selectedLeadId === lead.id
 
               return (
@@ -401,7 +423,6 @@ export default function AppointmentsScreen() {
           >
             <View style={styles.pickerFieldCopy}>
               <Text style={styles.pickerValue}>{formatDateLabel(selectedDate)}</Text>
-              <Text style={styles.pickerHint}>Use the local showing date.</Text>
             </View>
             <Feather name="calendar" size={18} color={mobileTheme.colors.mutedInk} />
           </Pressable>
@@ -436,7 +457,6 @@ export default function AppointmentsScreen() {
           >
             <View style={styles.pickerFieldCopy}>
               <Text style={styles.pickerValue}>{formatTimeLabel(selectedTime)}</Text>
-              <Text style={styles.pickerHint}>Use the native clock to avoid manual typing.</Text>
             </View>
             <Feather name="clock" size={18} color={mobileTheme.colors.mutedInk} />
           </Pressable>
@@ -464,7 +484,6 @@ export default function AppointmentsScreen() {
           value={showingAddress}
           onChangeText={setShowingAddress}
           placeholder="123 Queen St W, Toronto"
-          helperText="Add the first stop only. Extra logistics can live in notes."
           autoComplete="street-address"
           testID="appointment-address-input"
         />
@@ -473,7 +492,6 @@ export default function AppointmentsScreen() {
           value={notes}
           onChangeText={setNotes}
           placeholder="Optional access notes"
-          helperText="Use this for lockbox or client timing notes."
           multiline
           testID="appointment-notes-input"
         />
@@ -493,23 +511,20 @@ export default function AppointmentsScreen() {
 
 const styles = StyleSheet.create({
   schedulePromptCard: {
-    gap: 16
+    gap: 12
   },
   formCard: {
     gap: 16
   },
-  sectionHeader: {
-    gap: 4
-  },
   sectionTitle: {
     fontSize: mobileTheme.typography.section,
-    lineHeight: 28,
-    fontWeight: "700",
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   copy: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.mutedInk
   },
   searchGroup: {
@@ -517,16 +532,16 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: mobileTheme.colors.subtleInk
+    letterSpacing: 0,
+    color: mobileTheme.colors.brandStrong
   },
   searchInputShell: {
     minHeight: 52,
     borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
+    borderColor: mobileTheme.colors.borderStrong,
     backgroundColor: mobileTheme.colors.surface,
     paddingLeft: 14,
     paddingRight: 14,
@@ -565,24 +580,24 @@ const styles = StyleSheet.create({
     gap: 4
   },
   leadOptionLabel: {
-    fontSize: 16,
-    lineHeight: 21,
-    fontWeight: "700",
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 20,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   leadOptionLabelSelected: {
     color: mobileTheme.colors.brandStrong
   },
   leadOptionMeta: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
     color: mobileTheme.colors.mutedInk
   },
   pickerGroup: {
     gap: 8
   },
   pickerField: {
-    minHeight: 72,
+    minHeight: 58,
     borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
@@ -599,14 +614,9 @@ const styles = StyleSheet.create({
     gap: 4
   },
   pickerValue: {
-    fontSize: 16,
+    fontSize: mobileTheme.typography.body,
     fontWeight: "700",
     color: mobileTheme.colors.ink
-  },
-  pickerHint: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: mobileTheme.colors.mutedInk
   },
   nativePickerShell: {
     borderRadius: mobileTheme.radii.control,
@@ -617,7 +627,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   card: {
-    gap: 14
+    gap: 16
   },
   appointmentHeader: {
     flexDirection: "row",
@@ -630,14 +640,14 @@ const styles = StyleSheet.create({
     gap: 4
   },
   name: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "700",
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   meta: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 19,
     color: mobileTheme.colors.mutedInk
   },
   showings: {
@@ -651,19 +661,17 @@ const styles = StyleSheet.create({
   },
   showingIndex: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     color: mobileTheme.colors.brandStrong
   },
   showingAddress: {
-    fontSize: 15,
+    fontSize: mobileTheme.typography.body,
     lineHeight: 22,
     color: mobileTheme.colors.ink
   },
   actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10
   },
   pressed: {

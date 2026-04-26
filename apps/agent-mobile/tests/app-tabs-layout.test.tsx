@@ -2,6 +2,7 @@ import { render } from "@testing-library/react-native"
 import AppTabsLayout from "../app/(app)/_layout"
 
 const screenCalls: Array<{ name: string; options?: Record<string, unknown> }> = []
+const tabsCalls: Array<{ screenOptions?: Record<string, unknown> }> = []
 
 jest.mock("../providers/session-provider", () => ({
   useSession: jest.fn()
@@ -11,7 +12,8 @@ jest.mock("expo-router", () => {
   const React = require("react")
   const { Text, View } = require("react-native")
 
-  function Tabs(props: { children?: React.ReactNode }) {
+  function Tabs(props: { children?: React.ReactNode; screenOptions?: Record<string, unknown> }) {
+    tabsCalls.push(props)
     return <View>{props.children}</View>
   }
 
@@ -34,6 +36,7 @@ const { useSession } = jest.requireMock("../providers/session-provider") as {
 describe("AppTabsLayout", () => {
   beforeEach(() => {
     screenCalls.length = 0
+    tabsCalls.length = 0
   })
 
   it("redirects signed-out users back to sign in", () => {
@@ -69,6 +72,20 @@ describe("AppTabsLayout", () => {
     })
     expect(screenCalls.find((screen) => screen.name === "new-leads")?.options).toMatchObject({
       tabBarBadge: " "
+    })
+  })
+
+  it("uses the ShowReady green token for the active tab state", () => {
+    useSession.mockReturnValue({
+      session: { user: { id: "agent-1" } },
+      isBootstrapping: false,
+      unreadNewLeadsCount: 0
+    })
+
+    render(<AppTabsLayout />)
+
+    expect(tabsCalls[0]?.screenOptions).toMatchObject({
+      tabBarActiveTintColor: "#24533f"
     })
   })
 })

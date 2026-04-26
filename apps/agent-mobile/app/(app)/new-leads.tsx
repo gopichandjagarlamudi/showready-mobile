@@ -99,6 +99,9 @@ export default function NewLeadsScreen() {
         <EmptyState
           title="Review queue clear"
           body="New invite submissions will land here before they move into the active pipeline."
+          variant="guided"
+          eyebrow="Queue"
+          icon="inbox"
         />
       ) : (
         leads.map((lead) => {
@@ -183,7 +186,7 @@ export default function NewLeadsScreen() {
 
 const styles = StyleSheet.create({
   card: {
-    gap: 14
+    gap: 16
   },
   header: {
     flexDirection: "row",
@@ -197,31 +200,31 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 20,
-    fontWeight: "700",
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   contact: {
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 18,
     color: mobileTheme.colors.mutedInk
   },
   summary: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.mutedInk
   },
   hint: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0,
     color: mobileTheme.colors.accent
   },
   actions: {
     gap: 10
   },
   secondaryActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10
   }
 })

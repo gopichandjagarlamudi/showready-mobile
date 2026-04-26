@@ -112,6 +112,11 @@ describe("LeadDetailScreen", () => {
     const screen = render(<LeadDetailScreen />)
 
     await screen.findByTestId("lead-open-override-sheet-button")
+    expect(
+      screen.queryByText(
+        "Review scoring context, move the lead through the pipeline, and preserve manual overrides with notes."
+      )
+    ).toBeNull()
 
     fireEvent.press(screen.getByTestId("lead-back-button"))
 

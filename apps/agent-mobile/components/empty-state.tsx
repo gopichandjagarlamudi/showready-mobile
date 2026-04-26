@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native"
+import { Feather } from "@expo/vector-icons"
 import { mobileTheme } from "@showready/design-system"
 import { ActionButton } from "./ui/action-button"
 
@@ -7,19 +8,27 @@ export function EmptyState({
   body,
   actionLabel,
   onAction,
+  actionTestID,
   variant = "default",
-  eyebrow
+  eyebrow,
+  icon = "inbox"
 }: {
   title: string
   body: string
   actionLabel?: string
   onAction?: () => void
+  actionTestID?: string
   variant?: "default" | "guided"
   eyebrow?: string
+  icon?: keyof typeof Feather.glyphMap
 }) {
   return (
     <View style={[styles.container, variant === "guided" ? styles.guidedContainer : null]}>
-      {variant === "guided" ? <View style={styles.guidedBadge} /> : null}
+      {variant === "guided" ? (
+        <View style={styles.guidedBadge}>
+          <Feather name={icon} size={26} color={mobileTheme.colors.brand} />
+        </View>
+      ) : null}
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.body}>{body}</Text>
@@ -28,6 +37,7 @@ export function EmptyState({
           label={actionLabel}
           onPress={onAction}
           tone={variant === "guided" ? "primary" : "secondary"}
+          testID={actionTestID}
         />
       ) : null}
     </View>
@@ -38,37 +48,40 @@ const styles = StyleSheet.create({
   container: {
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
-    borderRadius: 24,
-    padding: 20,
-    backgroundColor: mobileTheme.colors.surfaceMuted,
+    borderRadius: mobileTheme.radii.card,
+    padding: 22,
+    backgroundColor: mobileTheme.colors.surface,
     gap: 8
   },
   guidedContainer: {
-    backgroundColor: mobileTheme.colors.surfaceTint,
-    borderColor: mobileTheme.colors.borderStrong,
-    gap: 10
+    borderColor: mobileTheme.colors.border,
+    gap: 12,
+    ...mobileTheme.elevation.card
   },
   guidedBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: mobileTheme.colors.brand,
-    opacity: 0.12
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: mobileTheme.colors.surfaceTint
   },
   eyebrow: {
     color: mobileTheme.colors.brandStrong,
     fontSize: 11,
     fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 1
+    letterSpacing: 0
   },
   title: {
     color: mobileTheme.colors.ink,
-    fontSize: 18,
-    fontWeight: "700"
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "800"
   },
   body: {
     color: mobileTheme.colors.mutedInk,
-    lineHeight: 21
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 25
   }
 })

@@ -48,12 +48,15 @@ const styles = StyleSheet.create({
   badge: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border
   },
   label: {
     fontSize: 12,
-    fontWeight: "700",
+    lineHeight: 16,
+    fontWeight: "800",
     textTransform: "capitalize"
   }
 })

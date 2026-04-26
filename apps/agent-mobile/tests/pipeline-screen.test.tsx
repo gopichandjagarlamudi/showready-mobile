@@ -173,6 +173,14 @@ describe("PipelineScreen", () => {
         "Search the current lane, switch categories from one mobile-friendly picker, and keep stage moves close to the lead card."
       )
     ).toBeNull()
+    expect(screen.queryByText("Find a lead fast")).toBeNull()
+    expect(
+      screen.queryByText(
+        "Search the visible pipeline and narrow it to a single category before you open cards."
+      )
+    ).toBeNull()
+    expect(screen.queryByText("See every active lane in one searchable mobile list.")).toBeNull()
+    expect(screen.queryByText("Showing 4 active leads.")).toBeNull()
 
     expect(await screen.findByTestId("pipeline-card-lead-ready")).toBeTruthy()
     expect(screen.getByTestId("pipeline-card-lead-booked")).toBeTruthy()
@@ -182,6 +190,8 @@ describe("PipelineScreen", () => {
 
     fireEvent.press(screen.getByTestId("pipeline-open-category-sheet"))
     expect(screen.getByTestId("pipeline-category-sheet")).toBeTruthy()
+    expect(screen.queryByText("Pick one lane to keep the list short and thumb-friendly on mobile.")).toBeNull()
+    expect(screen.queryByText("Only nurture leads stay in view.")).toBeNull()
 
     fireEvent.press(screen.getByTestId("pipeline-category-option-nurture"))
 
@@ -230,6 +240,12 @@ describe("PipelineScreen", () => {
       expect(screen.getByText("No leads match this search yet.")).toBeTruthy()
     })
     expect(screen.getByText("Try a name, email, phone number, or a broader category.")).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("pipeline-clear-empty-search"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-card-lead-ready")).toBeTruthy()
+    })
   })
 
   it("opens a stage picker instead of rendering all move actions inline", async () => {
@@ -241,6 +257,7 @@ describe("PipelineScreen", () => {
     fireEvent.press(screen.getByTestId("pipeline-open-stage-sheet-lead-ready"))
 
     expect(screen.getByTestId("pipeline-stage-sheet")).toBeTruthy()
+    expect(screen.queryByText("Keep stage changes contextual instead of crowding every card.")).toBeNull()
     expect(screen.getByTestId("pipeline-move-lead-ready-closed_won")).toBeTruthy()
 
     fireEvent.press(screen.getByTestId("pipeline-move-lead-ready-closed_won"))

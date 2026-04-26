@@ -4,7 +4,20 @@ Standalone monorepo for the ShowReady native agent app and public intake web exp
 
 ## Mobile auth workflow
 
-Google OAuth on the mobile app is set up for a development build or standalone app, not Expo Go.
+The mobile app supports:
+
+- email/password
+- Google OAuth
+- Apple sign-in on iOS
+
+For the native auth flows, use a development build or standalone app instead of relying on Expo Go for final verification.
+
+The app id is `com.showready.mobile` on both iOS and Android. Android local helpers are available from the mobile package:
+
+```bash
+corepack pnpm --filter @showready/agent-mobile android:doctor
+corepack pnpm --filter @showready/agent-mobile android:emulator
+```
 
 Use:
 

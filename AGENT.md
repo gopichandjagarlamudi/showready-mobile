@@ -16,9 +16,10 @@ Use the known-good local routes and entrypoints for every verification pass in t
 - After the build is installed, open the app binary and connect it to the Metro server started by `corepack pnpm --filter @showready/agent-mobile dev`.
 - The current working auth callback scheme is `showready://auth/callback`.
 - Keep `EXPO_PUBLIC_API_BASE_URL` on `http://localhost:3000` for local dev.
+- For Android local tooling, run `corepack pnpm --filter @showready/agent-mobile android:doctor` to confirm SDK, JDK, emulator, and adb visibility.
 - Use the app bundle ids for Maestro:
-  - iOS: `com.anonymous.showready-native-rebuild`
-  - Android: `com.anonymous.showreadynativerebuild`
+  - iOS: `com.showready.mobile`
+  - Android: `com.showready.mobile`
 - Prefix iOS simulator and Maestro commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
 ## Maestro

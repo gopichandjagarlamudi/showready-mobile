@@ -6,7 +6,7 @@ import { getSupabaseAnonKey, getSupabaseUrl } from "./env"
 export const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
   auth: {
     storage: authStorage,
-    autoRefreshToken: true,
+    autoRefreshToken: false,
     persistSession: true,
     detectSessionInUrl: false
   }

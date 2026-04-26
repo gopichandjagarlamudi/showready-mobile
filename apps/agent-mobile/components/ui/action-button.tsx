@@ -21,6 +21,7 @@ export function ActionButton({
     <Pressable
       testID={testID}
       accessibilityRole="button"
+      accessibilityLabel={label}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -38,7 +39,7 @@ export function ActionButton({
         {icon ? (
           <Feather
             name={icon}
-            size={16}
+            size={18}
             color={
               tone === "primary"
                 ? mobileTheme.colors.inverse
@@ -71,8 +72,8 @@ const styles = StyleSheet.create({
     borderRadius: mobileTheme.radii.pill,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12
+    paddingHorizontal: 18,
+    paddingVertical: 13
   },
   primary: {
     backgroundColor: mobileTheme.colors.brand,
@@ -81,7 +82,7 @@ const styles = StyleSheet.create({
   secondary: {
     backgroundColor: mobileTheme.colors.surface,
     borderWidth: 1,
-    borderColor: mobileTheme.colors.border
+    borderColor: mobileTheme.colors.borderStrong
   },
   danger: {
     backgroundColor: mobileTheme.colors.lostSoft,
@@ -95,8 +96,9 @@ const styles = StyleSheet.create({
     gap: 8
   },
   label: {
-    fontSize: 14,
-    fontWeight: "700"
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800"
   },
   primaryLabel: {
     color: mobileTheme.colors.inverse

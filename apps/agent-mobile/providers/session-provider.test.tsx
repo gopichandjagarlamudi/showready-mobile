@@ -1,5 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react-native"
-import { Text } from "react-native"
+import { AppState, Text } from "react-native"
 import { SessionProvider, useSession } from "./session-provider"
 
 const mockChannel = {
@@ -13,10 +13,16 @@ const mockAuthUnsubscribe = jest.fn()
 const mockGetSession = jest.fn()
 const mockOnAuthStateChange = jest.fn()
 const mockSignOut = jest.fn()
+const mockStartAutoRefresh = jest.fn()
+const mockStopAutoRefresh = jest.fn()
 const mockSupabaseChannel = jest.fn()
 const mockGetInitialUrl = jest.fn()
 const mockAddEventListener = jest.fn()
 const mockRestoreSessionFromUrl = jest.fn()
+const mockCaptureDiagnosticsError = jest.fn()
+const mockFlushDiagnostics = jest.fn()
+const mockSetDiagnosticsApiClient = jest.fn()
+const mockReportApiRequestError = jest.fn()
 const mockListNewLeads = jest.fn()
 const mockRegisterPushToken = jest.fn()
 const mockGetPermissionsAsync = jest.fn()
@@ -61,6 +67,13 @@ jest.mock("../lib/auth-oauth", () => ({
   restoreSessionFromUrl: (...args: unknown[]) => mockRestoreSessionFromUrl(...args)
 }))
 
+jest.mock("../lib/diagnostics/service", () => ({
+  captureDiagnosticsError: (...args: unknown[]) => mockCaptureDiagnosticsError(...args),
+  flushDiagnostics: (...args: unknown[]) => mockFlushDiagnostics(...args),
+  reportApiRequestError: (...args: unknown[]) => mockReportApiRequestError(...args),
+  setDiagnosticsApiClient: (...args: unknown[]) => mockSetDiagnosticsApiClient(...args)
+}))
+
 jest.mock("../lib/env", () => ({
   getApiBaseUrl: jest.fn(() => "https://example.com")
 }))
@@ -70,7 +83,9 @@ jest.mock("../lib/supabase", () => ({
     auth: {
       getSession: (...args: unknown[]) => mockGetSession(...args),
       onAuthStateChange: (...args: unknown[]) => mockOnAuthStateChange(...args),
-      signOut: (...args: unknown[]) => mockSignOut(...args)
+      signOut: (...args: unknown[]) => mockSignOut(...args),
+      startAutoRefresh: (...args: unknown[]) => mockStartAutoRefresh(...args),
+      stopAutoRefresh: (...args: unknown[]) => mockStopAutoRefresh(...args)
     },
     channel: (...args: unknown[]) => mockSupabaseChannel(...args),
     removeChannel: (...args: unknown[]) => mockRemoveChannel(...args)
@@ -90,7 +105,26 @@ function SessionValueProbe() {
 }
 
 describe("SessionProvider realtime refresh", () => {
+  let appStateChangeListener: ((state: string) => void) | null = null
+  let appStateAddEventListenerSpy: jest.SpyInstance
+
   beforeEach(() => {
+    appStateChangeListener = null
+    Object.defineProperty(AppState, "currentState", {
+      configurable: true,
+      value: "active"
+    })
+    appStateAddEventListenerSpy = jest.spyOn(AppState, "addEventListener")
+    appStateAddEventListenerSpy.mockImplementation((type, listener) => {
+      if (type === "change") {
+        appStateChangeListener = listener as (state: string) => void
+      }
+
+      return {
+        remove: jest.fn()
+      } as never
+    })
+
     mockChannel.on.mockReset()
     mockChannel.on.mockImplementation(() => mockChannel)
     mockChannel.subscribe.mockReset()
@@ -120,6 +154,11 @@ describe("SessionProvider realtime refresh", () => {
     })
 
     mockSignOut.mockReset()
+    mockSignOut.mockResolvedValue({ error: null })
+    mockStartAutoRefresh.mockReset()
+    mockStartAutoRefresh.mockResolvedValue(undefined)
+    mockStopAutoRefresh.mockReset()
+    mockStopAutoRefresh.mockResolvedValue(undefined)
     mockSupabaseChannel.mockReset()
     mockSupabaseChannel.mockReturnValue(mockChannel)
     mockGetInitialUrl.mockReset()
@@ -129,6 +168,13 @@ describe("SessionProvider realtime refresh", () => {
       remove: jest.fn()
     })
     mockRestoreSessionFromUrl.mockReset()
+    mockCaptureDiagnosticsError.mockReset()
+    mockCaptureDiagnosticsError.mockResolvedValue(undefined)
+    mockFlushDiagnostics.mockReset()
+    mockFlushDiagnostics.mockResolvedValue(undefined)
+    mockSetDiagnosticsApiClient.mockReset()
+    mockReportApiRequestError.mockReset()
+    mockReportApiRequestError.mockResolvedValue(undefined)
     mockListNewLeads.mockReset()
     mockListNewLeads.mockResolvedValue([{ id: "lead-new" }])
     mockRegisterPushToken.mockReset()
@@ -156,6 +202,10 @@ describe("SessionProvider realtime refresh", () => {
     mockRouterPush.mockReset()
     notificationReceivedListener = null
     notificationResponseListener = null
+  })
+
+  afterEach(() => {
+    appStateAddEventListenerSpy.mockRestore()
   })
 
   it("bumps workspace version when a lead realtime event arrives", async () => {
@@ -261,5 +311,84 @@ describe("SessionProvider realtime refresh", () => {
     await waitFor(() => {
       expect(screen.getByTestId("unread-new-leads").props.children).toBe(1)
     })
+  })
+
+  it("starts and stops Supabase auto-refresh with the app state", async () => {
+    const screen = render(
+      <SessionProvider>
+        <SessionValueProbe />
+      </SessionProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-user").props.children).toBe("agent-1")
+    })
+
+    expect(mockStartAutoRefresh).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      appStateChangeListener?.("background")
+    })
+
+    expect(mockStopAutoRefresh).toHaveBeenCalled()
+
+    await act(async () => {
+      appStateChangeListener?.("active")
+    })
+
+    expect(mockStartAutoRefresh).toHaveBeenCalledTimes(2)
+  })
+
+  it("clears a stale stored session when Supabase cannot refresh it during bootstrap", async () => {
+    const staleRefreshError = new Error("Invalid Refresh Token: Refresh Token Not Found")
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: null
+      },
+      error: staleRefreshError
+    })
+
+    const screen = render(
+      <SessionProvider>
+        <SessionValueProbe />
+      </SessionProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-user").props.children).toBe("none")
+    })
+
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" })
+    expect(mockStopAutoRefresh).toHaveBeenCalled()
+    expect(mockCaptureDiagnosticsError).toHaveBeenCalledWith(
+      staleRefreshError,
+      expect.objectContaining({
+        category: "auth",
+        severity: "warning"
+      })
+    )
+  })
+
+  it("still clears a stale stored session when diagnostics reporting fails", async () => {
+    mockCaptureDiagnosticsError.mockRejectedValue(new Error("Diagnostics unavailable"))
+    mockGetSession.mockResolvedValue({
+      data: {
+        session: null
+      },
+      error: new Error("Invalid Refresh Token: Refresh Token Not Found")
+    })
+
+    const screen = render(
+      <SessionProvider>
+        <SessionValueProbe />
+      </SessionProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-user").props.children).toBe("none")
+    })
+
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" })
+    expect(mockStopAutoRefresh).toHaveBeenCalled()
   })
 })

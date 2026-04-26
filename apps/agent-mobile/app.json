@@ -11,6 +11,7 @@
           "launchMode": "most-recent"
         }
       ],
+      "expo-apple-authentication",
       "expo-notifications",
       "expo-router",
       "expo-web-browser"
@@ -19,10 +20,15 @@
       "typedRoutes": true
     },
     "android": {
-      "package": "com.showready.mobile"
+      "package": "com.showready.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0D1B"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.showready.mobile",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

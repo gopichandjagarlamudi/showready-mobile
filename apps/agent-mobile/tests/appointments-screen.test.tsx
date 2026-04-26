@@ -93,6 +93,78 @@ describe("AppointmentsScreen", () => {
           summary: "Needs a second conversation.",
           createdAt: "2026-04-20T12:00:00.000Z",
           updatedAt: "2026-04-20T12:00:00.000Z"
+        },
+        {
+          id: "lead-3",
+          agentId: "agent-1",
+          buyerName: "Casey Ready",
+          buyerEmail: "casey@example.com",
+          buyerPhone: "416-555-0104",
+          intakeType: "sale",
+          token: "invite-token-3",
+          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+          status: "pending",
+          pipelineStage: "ready_to_show",
+          submittedAt: "2026-04-23T12:00:00.000Z",
+          score: 8.7,
+          recommendation: "show",
+          summary: "Ready soon.",
+          createdAt: "2026-04-23T12:00:00.000Z",
+          updatedAt: "2026-04-23T12:00:00.000Z"
+        },
+        {
+          id: "lead-4",
+          agentId: "agent-1",
+          buyerName: "Morgan Ready",
+          buyerEmail: "morgan@example.com",
+          buyerPhone: "416-555-0105",
+          intakeType: "sale",
+          token: "invite-token-4",
+          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+          status: "pending",
+          pipelineStage: "ready_to_show",
+          submittedAt: "2026-04-22T12:00:00.000Z",
+          score: 8.5,
+          recommendation: "show",
+          summary: "Ready this week.",
+          createdAt: "2026-04-22T12:00:00.000Z",
+          updatedAt: "2026-04-22T12:00:00.000Z"
+        },
+        {
+          id: "lead-5",
+          agentId: "agent-1",
+          buyerName: "Rowan Ready",
+          buyerEmail: "rowan@example.com",
+          buyerPhone: "416-555-0106",
+          intakeType: "sale",
+          token: "invite-token-5",
+          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+          status: "pending",
+          pipelineStage: "ready_to_show",
+          submittedAt: "2026-04-19T12:00:00.000Z",
+          score: 8.1,
+          recommendation: "show",
+          summary: "Older ready lead.",
+          createdAt: "2026-04-19T12:00:00.000Z",
+          updatedAt: "2026-04-19T12:00:00.000Z"
+        },
+        {
+          id: "lead-6",
+          agentId: "agent-1",
+          buyerName: "Avery Hold",
+          buyerEmail: "avery@example.com",
+          buyerPhone: "416-555-0107",
+          intakeType: "sale",
+          token: "invite-token-6",
+          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+          status: "pending",
+          pipelineStage: "hold",
+          submittedAt: "2026-04-24T12:00:00.000Z",
+          score: 5.9,
+          recommendation: "hold",
+          summary: "Can be searched, but not suggested.",
+          createdAt: "2026-04-24T12:00:00.000Z",
+          updatedAt: "2026-04-24T12:00:00.000Z"
         }
       ]),
       saveAppointment,
@@ -109,6 +181,11 @@ describe("AppointmentsScreen", () => {
         "Keep scheduling and queue review separate so every appointment task is clear on a phone-sized screen."
       )
     ).toBeNull()
+    expect(
+      screen.queryByText(
+        "Keep the main screen focused on the queue, then open scheduling only when you need it."
+      )
+    ).toBeNull()
     expect(screen.queryByTestId("appointment-save-button")).toBeNull()
 
     fireEvent.press(screen.getByTestId("appointments-open-schedule-sheet"))
@@ -116,6 +193,15 @@ describe("AppointmentsScreen", () => {
     expect(await screen.findByTestId("appointment-save-button")).toBeTruthy()
     expect(screen.getByTestId("appointment-lead-search-input")).toBeTruthy()
     expect(screen.getByTestId("appointments-schedule-sheet-close")).toBeTruthy()
+    expect(
+      screen.queryByText("Pick the lead first, then fill the minimal showing details.")
+    ).toBeNull()
+    expect(screen.queryByText("Use the local showing date.")).toBeNull()
+    expect(screen.queryByText("Use the native clock to avoid manual typing.")).toBeNull()
+    expect(
+      screen.queryByText("Add the first stop only. Extra logistics can live in notes.")
+    ).toBeNull()
+    expect(screen.queryByText("Use this for lockbox or client timing notes.")).toBeNull()
 
     fireEvent.changeText(screen.getByTestId("appointment-lead-search-input"), "briar")
 
@@ -124,10 +210,47 @@ describe("AppointmentsScreen", () => {
     })
     expect(screen.queryByTestId("appointment-lead-option-lead-1")).toBeNull()
 
+    fireEvent.changeText(screen.getByTestId("appointment-lead-search-input"), "missing")
+
+    await waitFor(() => {
+      expect(screen.getByText("No leads match this search")).toBeTruthy()
+    })
+
+    fireEvent.press(screen.getByTestId("appointment-clear-lead-search"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("appointment-lead-option-lead-1")).toBeTruthy()
+    })
+
     fireEvent.press(screen.getByTestId("appointments-schedule-sheet-close"))
 
     await waitFor(() => {
       expect(screen.queryByTestId("appointment-save-button")).toBeNull()
+    })
+  })
+
+  it("starts with three recent ready leads and uses search for the full eligible list", async () => {
+    const screen = render(<AppointmentsScreen />)
+
+    fireEvent.press(await screen.findByTestId("appointments-open-schedule-sheet"))
+
+    expect(await screen.findByTestId("appointment-lead-option-lead-3")).toBeTruthy()
+    expect(screen.getByTestId("appointment-lead-option-lead-4")).toBeTruthy()
+    expect(screen.getByTestId("appointment-lead-option-lead-1")).toBeTruthy()
+    expect(screen.queryByTestId("appointment-lead-option-lead-5")).toBeNull()
+    expect(screen.queryByTestId("appointment-lead-option-lead-2")).toBeNull()
+    expect(screen.queryByTestId("appointment-lead-option-lead-6")).toBeNull()
+
+    fireEvent.changeText(screen.getByTestId("appointment-lead-search-input"), "rowan")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("appointment-lead-option-lead-5")).toBeTruthy()
+    })
+
+    fireEvent.changeText(screen.getByTestId("appointment-lead-search-input"), "avery")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("appointment-lead-option-lead-6")).toBeTruthy()
     })
   })
 

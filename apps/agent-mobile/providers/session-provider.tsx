@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react"
 import type { PropsWithChildren } from "react"
 import * as Linking from "expo-linking"
 import * as Notifications from "expo-notifications"
-import { Platform } from "react-native"
+import { AppState, Platform } from "react-native"
+import type { AppStateStatus } from "react-native"
 import type { Session } from "@supabase/supabase-js"
 import { router } from "expo-router"
 import { createMobileApiClient } from "@showready/infrastructure"
@@ -27,6 +28,38 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 const MobileApiContext = createContext<ReturnType<typeof createMobileApiClient> | null>(null)
+
+function reportAuthDiagnosticsError(error: unknown, context: Record<string, string>) {
+  void captureDiagnosticsError(error, {
+    eventType: "auth.event",
+    category: "auth",
+    severity: "warning",
+    context
+  }).catch(() => {})
+}
+
+async function clearStaleStoredSession(error: unknown) {
+  reportAuthDiagnosticsError(error, {
+    source: "session-bootstrap",
+    reason: "stored-session-refresh-failed"
+  })
+
+  try {
+    const { error: signOutError } = await supabase.auth.signOut({ scope: "local" })
+
+    if (signOutError) {
+      reportAuthDiagnosticsError(signOutError, {
+        action: "clear-stale-local-session"
+      })
+    }
+  } catch (signOutError) {
+    reportAuthDiagnosticsError(signOutError, {
+      action: "clear-stale-local-session"
+    })
+  } finally {
+    await supabase.auth.stopAutoRefresh()
+  }
+}
 
 export function SessionProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null)
@@ -108,7 +141,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
           }
         }
 
-        const { data } = await supabase.auth.getSession()
+        const { data, error } = await supabase.auth.getSession()
+
+        if (error) {
+          await clearStaleStoredSession(error)
+
+          if (isMounted) {
+            setSession(null)
+          }
+
+          return
+        }
 
         if (!isMounted) {
           return
@@ -163,6 +206,31 @@ export function SessionProvider({ children }: PropsWithChildren) {
       linkingSubscription.remove()
     }
   }, [])
+
+  useEffect(() => {
+    if (!session) {
+      void supabase.auth.stopAutoRefresh()
+      return
+    }
+
+    function syncAutoRefresh(appState: AppStateStatus) {
+      if (appState === "active") {
+        void supabase.auth.startAutoRefresh()
+        return
+      }
+
+      void supabase.auth.stopAutoRefresh()
+    }
+
+    syncAutoRefresh(AppState.currentState)
+
+    const subscription = AppState.addEventListener("change", syncAutoRefresh)
+
+    return () => {
+      subscription.remove()
+      void supabase.auth.stopAutoRefresh()
+    }
+  }, [session])
 
   useEffect(() => {
     const agentId = session?.user.id

@@ -150,15 +150,10 @@ export default function SettingsScreen() {
   return (
     <ScreenShell
       title="Settings"
-      subtitle="Keep your mobile profile clean and accurate without carrying the full desktop admin surface."
       testID="settings-screen"
     >
       <SurfaceCard style={styles.identityCard}>
-        <Text style={styles.identityEyebrow}>Signed in identity</Text>
         <Text style={styles.identityEmail}>{session?.user.email ?? "Unknown email"}</Text>
-        <Text style={styles.identityMeta}>
-          Profile updates stay scoped to this signed-in account.
-        </Text>
         <ActionButton
           label={isSigningOut ? "Signing out..." : "Sign out"}
           tone="danger"
@@ -184,7 +179,6 @@ export default function SettingsScreen() {
         />
       ) : (
         <SurfaceCard style={styles.formCard}>
-          <Text style={styles.sectionTitle}>Profile maintenance</Text>
           <FormField
             label="Full name"
             value={form.fullName}
@@ -214,9 +208,6 @@ export default function SettingsScreen() {
           <View style={styles.preferenceRow}>
             <View style={styles.preferenceCopy}>
               <Text style={styles.preferenceTitle}>Also send email notification</Text>
-              <Text style={styles.preferenceBody}>
-                Send an email copy when a new lead submits the generated intake form.
-              </Text>
             </View>
             <Switch
               testID="settings-email-notifications-toggle"
@@ -247,33 +238,16 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   identityCard: {
-    gap: 8
-  },
-  identityEyebrow: {
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-    color: mobileTheme.colors.accent
+    gap: 10
   },
   identityEmail: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: "700",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
-  },
-  identityMeta: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: mobileTheme.colors.mutedInk
   },
   formCard: {
     gap: 16
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: mobileTheme.colors.ink
   },
   preferenceRow: {
     flexDirection: "row",
@@ -286,13 +260,9 @@ const styles = StyleSheet.create({
     gap: 4
   },
   preferenceTitle: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
-  },
-  preferenceBody: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: mobileTheme.colors.mutedInk
   }
 })

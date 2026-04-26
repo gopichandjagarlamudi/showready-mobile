@@ -75,9 +75,11 @@ const styles = StyleSheet.create({
     gap: 8
   },
   label: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: mobileTheme.colors.mutedInk
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0,
+    color: mobileTheme.colors.brandStrong
   },
   input: {
     minHeight: 52,
@@ -96,14 +98,15 @@ const styles = StyleSheet.create({
   },
   helper: {
     color: mobileTheme.colors.subtleInk,
-    fontSize: 12,
-    lineHeight: 18
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 21
   },
   inputError: {
     borderColor: mobileTheme.colors.lost
   },
   error: {
     color: mobileTheme.colors.lost,
-    fontSize: 12
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 21
   }
 })

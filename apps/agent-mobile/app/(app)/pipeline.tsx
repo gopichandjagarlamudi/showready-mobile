@@ -40,7 +40,6 @@ type PipelineCategoryOption = {
   value: PipelineCategoryValue
   label: string
   count: number
-  description: string
 }
 
 function getSectionsForTab(tab: PipelineTab) {
@@ -90,16 +89,6 @@ function getPipelineDisplayStage(lead: Lead): PipelineCategoryStage | null {
   return "hold"
 }
 
-function getCategoryDescription(tab: PipelineTab, label: string, isAll: boolean) {
-  if (isAll) {
-    return tab === "active"
-      ? "See every active lane in one searchable mobile list."
-      : "Review every resolved outcome without scrolling through sections."
-  }
-
-  return `Only ${label.toLowerCase()} leads stay in view.`
-}
-
 function getEmptyState(tab: PipelineTab, category: PipelineCategoryOption, searchQuery: string) {
   if (searchQuery.trim().length > 0) {
     return {
@@ -128,26 +117,6 @@ function getEmptyState(tab: PipelineTab, category: PipelineCategoryOption, searc
         body: "Closed and archived leads will appear here once the pipeline starts cycling.",
         eyebrow: "Resolved view"
       }
-}
-
-function getResultsSummary(
-  tab: PipelineTab,
-  category: PipelineCategoryOption,
-  filteredCount: number,
-  totalCount: number,
-  searchQuery: string
-) {
-  const trimmedQuery = searchQuery.trim()
-
-  if (trimmedQuery.length > 0) {
-    return `Showing ${filteredCount} of ${totalCount} leads for "${trimmedQuery}".`
-  }
-
-  if (category.value === "all") {
-    return `Showing ${filteredCount} ${tab} leads.`
-  }
-
-  return `Showing ${filteredCount} ${category.label.toLowerCase()} leads.`
 }
 
 function matchesSearch(lead: Lead, query: string) {
@@ -204,14 +173,12 @@ function getCategoryOptions(leads: Lead[], tab: PipelineTab): PipelineCategoryOp
     {
       value: "all",
       label: tab === "active" ? "All active" : "All resolved",
-      count: leads.length,
-      description: getCategoryDescription(tab, tab === "active" ? "active" : "resolved", true)
+      count: leads.length
     },
     ...sections.map((section) => ({
       value: section.stage,
       label: section.label,
-      count: leads.filter((lead) => getPipelineDisplayStage(lead) === section.stage).length,
-      description: getCategoryDescription(tab, section.label, false)
+      count: leads.filter((lead) => getPipelineDisplayStage(lead) === section.stage).length
     }))
   ]
 }
@@ -325,12 +292,7 @@ export default function PipelineScreen() {
 
       <SurfaceCard style={styles.filtersCard}>
         <View style={styles.filtersHeader}>
-          <View style={styles.filtersCopy}>
-            <Text style={styles.filtersTitle}>Find a lead fast</Text>
-            <Text style={styles.filtersBody}>
-              Search the visible pipeline and narrow it to a single category before you open cards.
-            </Text>
-          </View>
+          <Text style={styles.fieldLabel}>Visible leads</Text>
           <View style={styles.resultsPill}>
             <Text style={styles.resultsPillValue}>{filteredLeads.length}</Text>
             <Text style={styles.resultsPillLabel}>shown</Text>
@@ -376,7 +338,6 @@ export default function PipelineScreen() {
           <View style={styles.categoryPickerCopy}>
             <Text style={styles.fieldLabel}>Category</Text>
             <Text style={styles.categoryPickerValue}>{activeCategory.label}</Text>
-            <Text style={styles.categoryPickerHint}>{activeCategory.description}</Text>
           </View>
           <View style={styles.categoryPickerMeta}>
             <Text style={styles.categoryPickerCount}>{activeCategory.count}</Text>
@@ -384,9 +345,6 @@ export default function PipelineScreen() {
           </View>
         </Pressable>
 
-        <Text style={styles.resultsSummary}>
-          {getResultsSummary(tab, activeCategory, filteredLeads.length, activeCategory.count, searchQuery)}
-        </Text>
       </SurfaceCard>
 
       {message ? <InlineMessage tone="warning" title="Pipeline update" message={message} /> : null}
@@ -400,6 +358,9 @@ export default function PipelineScreen() {
           title={emptyState.title}
           body={emptyState.body}
           eyebrow={emptyState.eyebrow}
+          actionLabel={searchIsActive ? "Clear search" : undefined}
+          actionTestID={searchIsActive ? "pipeline-clear-empty-search" : undefined}
+          onAction={searchIsActive ? () => setSearchQuery("") : undefined}
           variant="guided"
         />
       ) : (
@@ -421,17 +382,18 @@ export default function PipelineScreen() {
                 <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
                 <View style={styles.primaryActions}>
                   <ActionButton
+                    label="Open full detail"
+                    icon="chevron-right"
+                    onPress={() => router.push(`/lead/${lead.id}`)}
+                    testID={`pipeline-open-${lead.id}`}
+                  />
+                  <ActionButton
                     label="Update stage"
+                    tone="secondary"
                     icon="sliders"
                     onPress={() => setSelectedLead(lead)}
                     disabled={busyLeadId === lead.id}
                     testID={`pipeline-open-stage-sheet-${lead.id}`}
-                  />
-                  <ActionButton
-                    label="Open full detail"
-                    tone="secondary"
-                    onPress={() => router.push(`/lead/${lead.id}`)}
-                    testID={`pipeline-open-${lead.id}`}
                   />
                 </View>
               </SurfaceCard>
@@ -444,7 +406,6 @@ export default function PipelineScreen() {
         visible={isCategorySheetOpen}
         onClose={() => setIsCategorySheetOpen(false)}
         title={tab === "active" ? "Filter active leads" : "Filter resolved leads"}
-        subtitle="Pick one lane to keep the list short and thumb-friendly on mobile."
         testID="pipeline-category-sheet"
       >
         <View style={styles.categoryOptions}>
@@ -471,7 +432,6 @@ export default function PipelineScreen() {
                   <Text style={[styles.categoryOptionTitle, isSelected ? styles.categoryOptionTitleSelected : null]}>
                     {option.label}
                   </Text>
-                  <Text style={styles.categoryOptionDescription}>{option.description}</Text>
                 </View>
                 <View style={styles.categoryOptionMeta}>
                   <Text style={styles.categoryOptionCount}>{option.count}</Text>
@@ -491,7 +451,6 @@ export default function PipelineScreen() {
         visible={selectedLead !== null}
         onClose={() => setSelectedLead(null)}
         title={selectedLead ? `Move ${selectedLead.buyerName}` : "Move lead"}
-        subtitle="Keep stage changes contextual instead of crowding every card."
         testID="pipeline-stage-sheet"
       >
         {selectedLead ? (
@@ -533,26 +492,13 @@ const styles = StyleSheet.create({
   },
   filtersHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: 12
   },
-  filtersCopy: {
-    flex: 1,
-    gap: 4
-  },
-  filtersTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: mobileTheme.colors.ink
-  },
-  filtersBody: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: mobileTheme.colors.mutedInk
-  },
   resultsPill: {
-    minWidth: 74,
+    minWidth: 68,
+    minHeight: 62,
     borderRadius: mobileTheme.radii.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -563,15 +509,16 @@ const styles = StyleSheet.create({
     borderColor: mobileTheme.colors.border
   },
   resultsPillValue: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: mobileTheme.colors.ink
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: "800",
+    color: mobileTheme.colors.brandStrong
   },
   resultsPillLabel: {
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     color: mobileTheme.colors.brandStrong
   },
   searchGroup: {
@@ -579,16 +526,16 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: mobileTheme.colors.subtleInk
+    letterSpacing: 0,
+    color: mobileTheme.colors.brandStrong
   },
   searchInputShell: {
     minHeight: 52,
     borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
+    borderColor: mobileTheme.colors.borderStrong,
     backgroundColor: mobileTheme.colors.surface,
     paddingLeft: 14,
     paddingRight: 8,
@@ -610,7 +557,7 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   categoryPicker: {
-    minHeight: 78,
+    minHeight: 64,
     borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
@@ -627,14 +574,9 @@ const styles = StyleSheet.create({
     gap: 4
   },
   categoryPickerValue: {
-    fontSize: 17,
-    fontWeight: "700",
+    fontSize: mobileTheme.typography.body,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
-  },
-  categoryPickerHint: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: mobileTheme.colors.mutedInk
   },
   categoryPickerMeta: {
     alignItems: "center",
@@ -649,19 +591,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     backgroundColor: mobileTheme.colors.surfaceMuted,
     color: mobileTheme.colors.mutedInk,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700"
   },
-  resultsSummary: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: mobileTheme.colors.brandStrong
-  },
   leadList: {
-    gap: 12
+    gap: 14
   },
   card: {
-    gap: 14
+    gap: 16
   },
   header: {
     flexDirection: "row",
@@ -675,16 +612,18 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 20,
-    fontWeight: "700",
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   contact: {
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 18,
     color: mobileTheme.colors.mutedInk
   },
   summary: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.mutedInk
   },
   primaryActions: {
@@ -715,17 +654,12 @@ const styles = StyleSheet.create({
     gap: 4
   },
   categoryOptionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: mobileTheme.typography.body,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   categoryOptionTitleSelected: {
     color: mobileTheme.colors.brandStrong
-  },
-  categoryOptionDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: mobileTheme.colors.mutedInk
   },
   categoryOptionMeta: {
     alignItems: "center",
@@ -740,12 +674,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     backgroundColor: mobileTheme.colors.surfaceMuted,
     color: mobileTheme.colors.mutedInk,
-    fontSize: 13,
-    fontWeight: "700"
+    fontSize: 12,
+    fontWeight: "800"
   },
   sheetActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10
   },
   pressed: {

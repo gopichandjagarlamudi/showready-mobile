@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
     borderRadius: mobileTheme.radii.card,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
-    padding: 20,
+    padding: 18,
     gap: 12,
     ...mobileTheme.elevation.card
   }

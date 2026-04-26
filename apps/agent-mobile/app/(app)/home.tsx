@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import * as Clipboard from "expo-clipboard"
-import { Pressable, Share, StyleSheet, Text, View } from "react-native"
+import { Feather } from "@expo/vector-icons"
+import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native"
 import { router } from "expo-router"
 import type { DashboardSummary, Lead } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
@@ -153,12 +154,20 @@ export default function HomeScreen() {
       ) : (
         <>
           <SurfaceCard style={styles.heroCard}>
-            <Text style={styles.sectionEyebrow}>Today at a glance</Text>
-            <Text style={styles.heroValue}>{summary.totalLeads} live leads</Text>
-            <Text style={styles.copy}>
-              {summary.readyToShow} ready to show, {summary.appointmentBooked} booked, and an average
-              qualification score of {summary.averageScore.toFixed(1)}.
-            </Text>
+            <View style={styles.heroCardHeader}>
+              <View style={styles.heroCardCopy}>
+                <Text style={styles.sectionEyebrow}>Today at a glance</Text>
+                <Text style={styles.heroValue}>{summary.totalLeads} active leads</Text>
+                <Text style={styles.copy}>
+                  {summary.readyToShow} ready to show, {summary.appointmentBooked} booked, and an average
+                  qualification score of {summary.averageScore.toFixed(1)}.
+                </Text>
+              </View>
+              <View style={styles.heroIconBadge}>
+                <Feather name="users" size={34} color={mobileTheme.colors.brandStrong} />
+              </View>
+            </View>
+            <View style={styles.heroDivider} />
             <View style={styles.actionRow}>
               <ActionButton
                 label="Invite tools"
@@ -175,28 +184,63 @@ export default function HomeScreen() {
             </View>
           </SurfaceCard>
 
-          <View style={styles.metricGrid}>
-            <MetricTile label="Ready" value={summary.readyToShow} tone="ready" />
-            <MetricTile label="Booked" value={summary.appointmentBooked} tone="appointment" />
-            <MetricTile label="Nurture" value={summary.nurture} tone="nurture" />
-            <MetricTile label="Hold" value={summary.hold} tone="hold" />
-          </View>
+          <ScrollView
+            horizontal
+            testID="home-metric-rail"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.metricRailContent}
+          >
+            <MetricTile
+              label="Ready"
+              value={summary.readyToShow}
+              tone="ready"
+              icon="check-circle"
+              testID="home-metric-ready"
+              onPress={() => router.push("/pipeline")}
+            />
+            <MetricTile
+              label="Booked"
+              value={summary.appointmentBooked}
+              tone="appointment"
+              icon="calendar"
+              testID="home-metric-booked"
+              onPress={() => router.push("/appointments")}
+            />
+            <MetricTile
+              label="Nurture"
+              value={summary.nurture}
+              tone="nurture"
+              icon="feather"
+              testID="home-metric-nurture"
+              onPress={() => router.push("/pipeline")}
+            />
+            <MetricTile
+              label="Hold"
+              value={summary.hold}
+              tone="hold"
+              icon="clock"
+              testID="home-metric-hold"
+              onPress={() => router.push("/pipeline")}
+            />
+          </ScrollView>
 
           <SurfaceCard style={styles.listCard}>
             <View style={styles.listHeader}>
-              <View style={styles.listHeaderCopy}>
-                <Text style={styles.sectionTitle}>Recent lead movement</Text>
-                <Text style={styles.copy}>The four most recent submissions stay within thumb reach.</Text>
-              </View>
+              <Text style={styles.sectionTitle}>Recent lead movement</Text>
             </View>
 
             {recentLeads.length === 0 ? (
-              <EmptyState
-                title="No recent activity"
-                body="New submissions and pipeline updates will appear here once invites are in circulation."
-                variant="guided"
-                eyebrow="First run"
-              />
+              <View style={styles.inlineEmptyState} testID="home-recent-empty">
+                <View style={styles.inlineEmptyIcon}>
+                  <Feather name="inbox" size={20} color={mobileTheme.colors.brandStrong} />
+                </View>
+                <View style={styles.inlineEmptyCopy}>
+                  <Text style={styles.inlineEmptyTitle}>No recent activity</Text>
+                  <Text style={styles.inlineEmptyBody}>
+                    New submissions and pipeline updates will appear here once invites are in circulation.
+                  </Text>
+                </View>
+              </View>
             ) : (
               recentLeads.map((lead) => (
                 <Pressable
@@ -207,6 +251,9 @@ export default function HomeScreen() {
                   testID={`home-open-lead-${lead.id}`}
                 >
                   <View style={styles.leadRowHeader}>
+                    <View style={styles.leadAvatar}>
+                      <Text style={styles.leadAvatarText}>{lead.buyerName.slice(0, 1).toUpperCase()}</Text>
+                    </View>
                     <View style={styles.leadMeta}>
                       <Text style={styles.leadName}>{lead.buyerName}</Text>
                       <Text style={styles.leadContact}>
@@ -215,7 +262,6 @@ export default function HomeScreen() {
                     </View>
                     <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
                   </View>
-                  <Text style={styles.copy}>{lead.summary ?? "Scoring summary pending."}</Text>
                 </Pressable>
               ))
             )}
@@ -226,7 +272,6 @@ export default function HomeScreen() {
         visible={isInviteSheetOpen}
         onClose={() => setIsInviteSheetOpen(false)}
         title="Invite tools"
-        subtitle="Generate and hand off intake links without crowding the dashboard."
         testID="invite-sheet"
       >
         {latestInviteUrl ? (
@@ -267,16 +312,17 @@ export default function HomeScreen() {
             </View>
           </>
         ) : (
-          <EmptyState
-            title="No link yet"
-            body="Create an intake link here, then copy or share it without leaving the dashboard."
-            actionLabel={isCreatingInvite ? "Creating invite..." : "Create invite"}
-            onAction={() => {
-              void handleCreateInvite()
-            }}
-            variant="guided"
-            eyebrow="Primary action"
-          />
+          <View style={styles.inviteQuickStart}>
+            <ActionButton
+              label={isCreatingInvite ? "Creating invite..." : "Create invite"}
+              icon="link"
+              onPress={() => {
+                void handleCreateInvite()
+              }}
+              disabled={isCreatingInvite}
+              testID="invite-button"
+            />
+          </View>
         )}
       </BottomSheet>
     </ScreenShell>
@@ -286,11 +332,17 @@ export default function HomeScreen() {
 function MetricTile({
   label,
   value,
-  tone
+  tone,
+  icon,
+  onPress,
+  testID
 }: {
   label: string
   value: number | string
   tone: "ready" | "appointment" | "nurture" | "hold"
+  icon: keyof typeof Feather.glyphMap
+  onPress: () => void
+  testID: string
 }) {
   const palette =
     tone === "ready"
@@ -305,21 +357,59 @@ function MetricTile({
           : { backgroundColor: mobileTheme.colors.holdSoft, color: mobileTheme.colors.hold }
 
   return (
-    <View style={[styles.metricTile, { backgroundColor: palette.backgroundColor }]}>
-      <Text style={[styles.metricLabel, { color: palette.color }]}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${label.toLowerCase()} leads`}
+      onPress={onPress}
+      testID={testID}
+      style={({ pressed }) => [
+        styles.metricTile,
+        { backgroundColor: palette.backgroundColor, borderColor: palette.color },
+        pressed ? styles.metricTilePressed : null
+      ]}
+    >
+      <View style={[styles.metricIcon, { backgroundColor: mobileTheme.colors.surface }]}>
+        <Feather name={icon} size={28} color={palette.color} />
+      </View>
+      <View style={styles.metricCopy}>
+        <Text style={[styles.metricLabel, { color: palette.color }]}>{label}</Text>
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
+      <Feather name="chevron-right" size={24} color={mobileTheme.colors.ink} />
+    </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
   heroCard: {
+    gap: 18
+  },
+  heroCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 18
+  },
+  heroCardCopy: {
+    flex: 1,
     gap: 12
+  },
+  heroIconBadge: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: mobileTheme.colors.surfaceStrong
+  },
+  heroDivider: {
+    height: 1,
+    backgroundColor: mobileTheme.colors.border
   },
   heroValue: {
     fontSize: 30,
-    lineHeight: 34,
-    fontWeight: "700",
+    lineHeight: 36,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   generatedInvite: {
@@ -334,6 +424,9 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: mobileTheme.colors.ink
   },
+  inviteQuickStart: {
+    gap: 12
+  },
   listCard: {
     gap: 14
   },
@@ -341,55 +434,96 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     color: mobileTheme.colors.brandStrong
   },
   sectionTitle: {
     fontSize: mobileTheme.typography.section,
-    lineHeight: 28,
-    fontWeight: "700",
+    lineHeight: 25,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   copy: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     color: mobileTheme.colors.mutedInk
   },
-  metricGrid: {
+  metricRailContent: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 12
   },
   metricTile: {
-    width: "47%",
-    minHeight: 108,
+    width: 152,
+    minHeight: 122,
     borderRadius: mobileTheme.radii.card,
-    paddingHorizontal: 16,
+    borderWidth: 1,
+    paddingHorizontal: 18,
     paddingVertical: 18,
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    gap: 12
+  },
+  metricTilePressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }]
+  },
+  metricIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  metricCopy: {
+    gap: 4
   },
   metricLabel: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
-    letterSpacing: 0.8
+    letterSpacing: 0
   },
   metricValue: {
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: "700",
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: "800",
     color: mobileTheme.colors.ink
   },
   actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10
   },
   listHeader: {
     gap: 12
   },
-  listHeaderCopy: {
+  inlineEmptyState: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: mobileTheme.colors.border
+  },
+  inlineEmptyIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: mobileTheme.colors.surfaceTint
+  },
+  inlineEmptyCopy: {
+    flex: 1,
     gap: 4
+  },
+  inlineEmptyTitle: {
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 23,
+    fontWeight: "800",
+    color: mobileTheme.colors.ink
+  },
+  inlineEmptyBody: {
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 21,
+    color: mobileTheme.colors.mutedInk
   },
   leadRow: {
     gap: 10,
@@ -402,23 +536,37 @@ const styles = StyleSheet.create({
   },
   leadRowHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: 12
+  },
+  leadAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: mobileTheme.colors.readySoft
+  },
+  leadAvatarText: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: "800",
+    color: mobileTheme.colors.brandStrong
   },
   leadMeta: {
     flex: 1,
     gap: 4
   },
   leadName: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 21,
     fontWeight: "700",
     color: mobileTheme.colors.ink
   },
   leadContact: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
     color: mobileTheme.colors.mutedInk
   }
 })
