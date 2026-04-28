@@ -82,7 +82,7 @@ export type BuyerQuestionnaireAnswers = {
   budgetKnowledge: BuyerBudgetKnowledge
   mortgageStatus: BuyerMortgageStatus
   neighborhoods: string
-  propertyType: BuyerPropertyType
+  propertyType: BuyerPropertyType[]
   bedrooms?: string
   bathrooms?: string
   mustHaves?: BuyerMustHave[]
@@ -94,7 +94,7 @@ export type RentalQuestionnaireAnswers = {
   moveTimeline: RentalMoveTimeline
   rentRange: string
   neighborhoods: string
-  placeType: RentalPlaceType
+  placeType: RentalPlaceType[]
   bedrooms: string
   hasPets: PetAnswer
   occupantCount: string
@@ -183,6 +183,7 @@ export type QuestionInputType =
   | "single_select"
   | "multi_select"
   | "text"
+  | "date"
   | "email"
   | "tel"
   | "textarea"
@@ -397,14 +398,13 @@ export const BUYER_REQUIRED_QUESTIONS: QuestionDefinition[] = [
     key: "buyer.propertyType",
     label: "What type of property are you looking for?",
     required: true,
-    type: "single_select",
+    type: "multi_select",
     options: [
       { label: "Condo", value: "condo" },
       { label: "Townhouse", value: "townhouse" },
       { label: "Detached", value: "detached" },
       { label: "Semi-detached", value: "semi_detached" },
-      { label: "Multi-family", value: "multi_family" },
-      { label: "Other", value: "other" }
+      { label: "Multi-family", value: "multi_family" }
     ]
   }
 ]
@@ -489,14 +489,13 @@ export const RENTAL_REQUIRED_QUESTIONS: QuestionDefinition[] = [
     key: "rental.placeType",
     label: "What type of place are you looking for?",
     required: true,
-    type: "single_select",
+    type: "multi_select",
     options: [
       { label: "Condo", value: "condo" },
       { label: "Apartment", value: "apartment" },
       { label: "Basement", value: "basement" },
       { label: "House", value: "house" },
-      { label: "Room", value: "room" },
-      { label: "Not sure", value: "not_sure" }
+      { label: "Room", value: "room" }
     ]
   },
   {
@@ -542,7 +541,7 @@ export const RENTAL_OPTIONAL_QUESTIONS: QuestionDefinition[] = [
     label: "Do you have a preferred move-in date?",
     placeholder: "YYYY-MM-DD",
     required: false,
-    type: "text"
+    type: "date"
   },
   {
     key: "rental.mustHaves",

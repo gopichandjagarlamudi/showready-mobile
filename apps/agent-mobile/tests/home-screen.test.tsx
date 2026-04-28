@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native"
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native"
 import HomeScreen from "../app/(app)/home"
 
 jest.mock("../providers/session-provider", () => ({
@@ -66,6 +66,10 @@ describe("HomeScreen", () => {
     })
   })
 
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
   it("shows the generated invite link and copies it from the dashboard", async () => {
     const screen = render(<HomeScreen />)
 
@@ -102,6 +106,36 @@ describe("HomeScreen", () => {
         "https://showready.example.com/intake/invite-token"
       )
     })
+  })
+
+  it("confirms copied invite links on the copy button before resetting", async () => {
+    const screen = render(<HomeScreen />)
+
+    fireEvent.press(await screen.findByTestId("invite-sheet-open-button"))
+    fireEvent.press(await screen.findByText("Create invite"))
+
+    await screen.findByText("https://showready.example.com/intake/invite-token")
+    expect(screen.getByText("Copy link")).toBeTruthy()
+
+    jest.useFakeTimers()
+    fireEvent.press(screen.getByTestId("copy-invite-button"))
+
+    await waitFor(() => {
+      expect(setStringAsync).toHaveBeenCalledWith(
+        "https://showready.example.com/intake/invite-token"
+      )
+    })
+    expect(await screen.findByText("Copied to clipboard")).toBeTruthy()
+    expect(screen.queryByText("Copy link")).toBeNull()
+
+    act(() => {
+      jest.advanceTimersByTime(2000)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText("Copy link")).toBeTruthy()
+    })
+    expect(screen.queryByText("Copied to clipboard")).toBeNull()
   })
 
   it("opens invite tools with the create action immediately available", async () => {

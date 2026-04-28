@@ -72,7 +72,7 @@ describe("application use cases", () => {
         budgetKnowledge: "know_it",
         mortgageStatus: "pre_approved",
         neighborhoods: "East End",
-        propertyType: "townhouse"
+        propertyType: ["townhouse"]
       }
     }
     const gateway = {

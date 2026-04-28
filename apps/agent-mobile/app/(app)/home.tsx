@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import * as Clipboard from "expo-clipboard"
 import { Feather } from "@expo/vector-icons"
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native"
@@ -28,6 +28,8 @@ export default function HomeScreen() {
   const [isCreatingInvite, setIsCreatingInvite] = useState(false)
   const [latestInviteUrl, setLatestInviteUrl] = useState<string | null>(null)
   const [isInviteSheetOpen, setIsInviteSheetOpen] = useState(false)
+  const [hasCopiedInvite, setHasCopiedInvite] = useState(false)
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -62,7 +64,40 @@ export default function HomeScreen() {
     }
   }, [api, session, workspaceVersion])
 
+  useEffect(() => {
+    return () => {
+      clearCopyFeedbackTimer()
+    }
+  }, [])
+
+  function clearCopyFeedbackTimer() {
+    if (copyFeedbackTimerRef.current) {
+      clearTimeout(copyFeedbackTimerRef.current)
+      copyFeedbackTimerRef.current = null
+    }
+  }
+
+  function resetCopyFeedback() {
+    clearCopyFeedbackTimer()
+    setHasCopiedInvite(false)
+  }
+
+  function showCopyFeedback() {
+    clearCopyFeedbackTimer()
+    setHasCopiedInvite(true)
+    copyFeedbackTimerRef.current = setTimeout(() => {
+      setHasCopiedInvite(false)
+      copyFeedbackTimerRef.current = null
+    }, 2000)
+  }
+
+  function closeInviteSheet() {
+    resetCopyFeedback()
+    setIsInviteSheetOpen(false)
+  }
+
   async function handleCreateInvite() {
+    resetCopyFeedback()
     setIsCreatingInvite(true)
     setMessage(null)
 
@@ -93,11 +128,7 @@ export default function HomeScreen() {
 
     try {
       await Clipboard.setStringAsync(latestInviteUrl)
-      setMessage({
-        tone: "success",
-        title: "Invite copied",
-        message: "The latest intake link is on your clipboard."
-      })
+      showCopyFeedback()
     } catch (error) {
       setMessage({
         tone: "error",
@@ -270,7 +301,7 @@ export default function HomeScreen() {
       )}
       <BottomSheet
         visible={isInviteSheetOpen}
-        onClose={() => setIsInviteSheetOpen(false)}
+        onClose={closeInviteSheet}
         title="Invite tools"
         testID="invite-sheet"
       >
@@ -292,8 +323,8 @@ export default function HomeScreen() {
                 testID="invite-button"
               />
               <ActionButton
-                label="Copy link"
-                icon="copy"
+                label={hasCopiedInvite ? "Copied to clipboard" : "Copy link"}
+                icon={hasCopiedInvite ? "check" : "copy"}
                 tone="secondary"
                 onPress={() => {
                   void handleCopyInvite()

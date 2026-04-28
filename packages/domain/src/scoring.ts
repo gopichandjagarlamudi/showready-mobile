@@ -8,6 +8,14 @@ import type {
   WorkedWithAnotherRealtor
 } from "@showready/contracts"
 
+function normalizeMultiAnswer(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string")
+  }
+
+  return typeof value === "string" && value ? [value] : []
+}
+
 const WEIGHTS = {
   urgency: 0.26,
   finances: 0.24,
@@ -66,12 +74,13 @@ function scoreBuyerFinances(
 
 function scoreBuyerClarity(answers: BuyerQuestionnaireAnswers) {
   let score = 4
+  const propertyTypes = normalizeMultiAnswer(answers.propertyType)
 
   if (answers.neighborhoods.trim()) {
     score += 3
   }
 
-  if (answers.propertyType !== "other") {
+  if (propertyTypes.length > 0 && !propertyTypes.includes("other")) {
     score += 2
   }
 
@@ -151,12 +160,13 @@ function scoreRentalFinances(answers: RentalQuestionnaireAnswers) {
 
 function scoreRentalClarity(answers: RentalQuestionnaireAnswers) {
   let score = 4
+  const placeTypes = normalizeMultiAnswer(answers.placeType)
 
   if (answers.neighborhoods.trim()) {
     score += 3
   }
 
-  if (answers.placeType !== "not_sure") {
+  if (placeTypes.length > 0 && !placeTypes.includes("not_sure")) {
     score += 2
   }
 

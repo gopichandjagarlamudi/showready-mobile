@@ -95,6 +95,34 @@ function setDraftValue(draft: IntakeDraft, key: string, value: string | string[]
   return draft
 }
 
+function getStringValue(value: unknown) {
+  return Array.isArray(value) ? "" : String(value ?? "")
+}
+
+function getMultiSelectValues(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return [value]
+  }
+
+  return []
+}
+
+function isAlreadySubmittedError(message: string) {
+  return message.toLowerCase().includes("already been submitted")
+}
+
+function getInputType(type: QuestionDefinition["type"]) {
+  if (type === "email" || type === "tel" || type === "date") {
+    return type
+  }
+
+  return "text"
+}
+
 export function IntakeFlow({
   token,
   draft: initialDraft,
@@ -176,6 +204,7 @@ export function IntakeFlow({
   const current = steps[index]
   const value = getDraftValue(draft, current.key)
   const isLastStep = index === steps.length - 1
+  const completionPath = `/intake/${token}/complete`
 
   function validateCurrent() {
     if (!current.required) {
@@ -212,12 +241,19 @@ export function IntakeFlow({
       const payload = await response.json()
 
       if (!response.ok) {
-        setError(payload.error ?? "Unable to save your progress right now.")
+        const message = payload.error ?? "Unable to save your progress right now."
+
+        if (shouldSubmit && isAlreadySubmittedError(message)) {
+          window.location.assign(completionPath)
+          return
+        }
+
+        setError(message)
         return
       }
 
       if (shouldSubmit) {
-        window.location.assign(`/intake/${token}/complete`)
+        window.location.assign(completionPath)
         return
       }
 
@@ -379,7 +415,7 @@ export function IntakeFlow({
           ) : current.type === "multi_select" ? (
             <div style={{ display: "grid", gap: 10 }}>
               {current.options?.map((option) => {
-                const currentValues = Array.isArray(value) ? value : []
+                const currentValues = getMultiSelectValues(value)
                 const isActive = currentValues.includes(option.value)
 
                 return (
@@ -409,7 +445,8 @@ export function IntakeFlow({
           ) : current.type === "textarea" ? (
             <textarea
               rows={5}
-              value={String(value)}
+              value={getStringValue(value)}
+              aria-label={current.label}
               onChange={(event) =>
                 setDraft((previous) => setDraftValue(previous, current.key, event.target.value))
               }
@@ -423,9 +460,10 @@ export function IntakeFlow({
             />
           ) : (
             <input
-              type={current.type === "email" ? "email" : current.type === "tel" ? "tel" : "text"}
-              value={String(value)}
+              type={getInputType(current.type)}
+              value={getStringValue(value)}
               placeholder={current.placeholder}
+              aria-label={current.label}
               enterKeyHint={isLastStep ? "done" : "next"}
               onChange={(event) =>
                 setDraft((previous) => setDraftValue(previous, current.key, event.target.value))

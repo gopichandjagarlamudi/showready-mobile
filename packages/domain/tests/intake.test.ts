@@ -19,7 +19,7 @@ describe("intake draft helpers", () => {
       budgetKnowledge: "rough_idea",
       mortgageStatus: "not_yet",
       neighborhoods: "Leslieville",
-      propertyType: "condo"
+      propertyType: ["condo"]
     },
     customAnswers: {
       referral_source: "Instagram"

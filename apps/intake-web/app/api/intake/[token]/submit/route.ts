@@ -8,6 +8,14 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { getAgentContext, listAgentPushTokens, submitInvite } from "@/lib/supabase/data"
 import { buildAppUrl } from "@/lib/utils"
 
+async function runSubmitSideEffect(label: string, operation: () => Promise<void>) {
+  try {
+    await operation()
+  } catch (error) {
+    captureServerError(error, `api.intake.submit.${label}`)
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -24,20 +32,34 @@ export async function POST(
       token,
       payload.draft
     )
-    const context = await getAgentContext(supabase, lead.agentId)
-    const pushTokens = await listAgentPushTokens(supabase, lead.agentId)
+    let context: Awaited<ReturnType<typeof getAgentContext>> | null = null
+    let pushTokens: string[] = []
 
-    await sendLeadScoredPushNotifications({
-      expoPushTokens: pushTokens,
-      title: "New lead submitted",
-      body: `${lead.buyerName} just submitted the intake form.`,
-      data: {
-        leadId: lead.id,
-        route: "/(app)/new-leads"
-      }
+    await runSubmitSideEffect("agent_context", async () => {
+      context = await getAgentContext(supabase, lead.agentId)
     })
 
-    if (context?.agent.email && context.settings.emailNotificationsEnabled) {
+    await runSubmitSideEffect("push_tokens", async () => {
+      pushTokens = await listAgentPushTokens(supabase, lead.agentId)
+    })
+
+    await runSubmitSideEffect("push_notifications", async () => {
+      await sendLeadScoredPushNotifications({
+        expoPushTokens: pushTokens,
+        title: "New lead submitted",
+        body: `${lead.buyerName} just submitted the intake form.`,
+        data: {
+          leadId: lead.id,
+          route: "/(app)/new-leads"
+        }
+      })
+    })
+
+    await runSubmitSideEffect("email", async () => {
+      if (!context?.agent.email || !context.settings.emailNotificationsEnabled) {
+        return
+      }
+
       await sendLeadScoredEmail({
         to: context.agent.email,
         agentName: context.agent.fullName,
@@ -46,9 +68,11 @@ export async function POST(
         score: lead.score ?? 0,
         detailUrl: buildAppUrl(`/leads/${lead.id}`, { request })
       })
-    }
+    })
 
-    await trackServerEvent("intake.submitted", { recommendation: lead.recommendation ?? "nurture" }, lead.agentId)
+    await runSubmitSideEffect("analytics", async () => {
+      await trackServerEvent("intake.submitted", { recommendation: lead.recommendation ?? "nurture" }, lead.agentId)
+    })
 
     return NextResponse.json({ lead })
   } catch (error) {

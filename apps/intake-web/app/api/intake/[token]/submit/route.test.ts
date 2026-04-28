@@ -9,7 +9,8 @@ const {
   mockListAgentPushTokens,
   mockSendLeadScoredEmail,
   mockSendLeadScoredPushNotifications,
-  mockTrackServerEvent
+  mockTrackServerEvent,
+  mockCaptureServerError
 } = vi.hoisted(() => ({
   mockSubmitIntakeDraft: vi.fn(),
   mockCreateSupabaseAdminClient: vi.fn(),
@@ -18,7 +19,8 @@ const {
   mockListAgentPushTokens: vi.fn(),
   mockSendLeadScoredEmail: vi.fn(),
   mockSendLeadScoredPushNotifications: vi.fn(),
-  mockTrackServerEvent: vi.fn()
+  mockTrackServerEvent: vi.fn(),
+  mockCaptureServerError: vi.fn()
 }))
 
 vi.mock("@showready/application", () => ({
@@ -44,6 +46,10 @@ vi.mock("@/lib/analytics", () => ({
   trackServerEvent: mockTrackServerEvent
 }))
 
+vi.mock("@/lib/observability", () => ({
+  captureServerError: mockCaptureServerError
+}))
+
 describe("POST /api/intake/[token]/submit", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000"
@@ -53,6 +59,7 @@ describe("POST /api/intake/[token]/submit", () => {
     mockSendLeadScoredEmail.mockReset()
     mockSendLeadScoredPushNotifications.mockReset()
     mockTrackServerEvent.mockReset()
+    mockCaptureServerError.mockReset()
     mockCreateSupabaseAdminClient.mockReturnValue({ admin: true })
     mockSubmitIntakeDraft.mockImplementation(async (gateway, token, draft) => {
       return gateway.submitDraft(token, draft)
@@ -95,7 +102,7 @@ describe("POST /api/intake/[token]/submit", () => {
         budgetKnowledge: "know_it",
         mortgageStatus: "pre_approved",
         neighborhoods: "Toronto",
-        propertyType: "condo"
+        propertyType: ["condo"]
       }
     }
     const response = await POST(
@@ -175,5 +182,119 @@ describe("POST /api/intake/[token]/submit", () => {
     expect(response.status).toBe(200)
     expect(mockSendLeadScoredPushNotifications).toHaveBeenCalledOnce()
     expect(mockSendLeadScoredEmail).not.toHaveBeenCalled()
+  })
+
+  it("still returns success when push notification delivery fails after submission", async () => {
+    mockSendLeadScoredPushNotifications.mockRejectedValueOnce(new Error("Expo unavailable"))
+
+    const response = await POST(
+      new Request("http://localhost/api/intake/token/submit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          draft: {
+            contact: {
+              fullName: "Taylor Verify",
+              email: "taylor@example.com"
+            },
+            intent: "buy"
+          }
+        })
+      }),
+      { params: Promise.resolve({ token: "invite-token" }) }
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      lead: {
+        id: "lead-1",
+        agentId: "agent-1",
+        buyerName: "Taylor Verify",
+        recommendation: "show",
+        score: 8.9
+      }
+    })
+    expect(mockCaptureServerError).toHaveBeenCalledWith(
+      expect.any(Error),
+      "api.intake.submit.push_notifications"
+    )
+  })
+
+  it("still returns success when email delivery fails after submission", async () => {
+    mockSendLeadScoredEmail.mockRejectedValueOnce(new Error("Email unavailable"))
+
+    const response = await POST(
+      new Request("http://localhost/api/intake/token/submit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          draft: {
+            contact: {
+              fullName: "Taylor Verify",
+              email: "taylor@example.com"
+            },
+            intent: "buy"
+          }
+        })
+      }),
+      { params: Promise.resolve({ token: "invite-token" }) }
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      lead: {
+        id: "lead-1",
+        agentId: "agent-1",
+        buyerName: "Taylor Verify",
+        recommendation: "show",
+        score: 8.9
+      }
+    })
+    expect(mockCaptureServerError).toHaveBeenCalledWith(
+      expect.any(Error),
+      "api.intake.submit.email"
+    )
+  })
+
+  it("still returns success when analytics tracking fails after submission", async () => {
+    mockTrackServerEvent.mockRejectedValueOnce(new Error("Analytics unavailable"))
+
+    const response = await POST(
+      new Request("http://localhost/api/intake/token/submit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          draft: {
+            contact: {
+              fullName: "Taylor Verify",
+              email: "taylor@example.com"
+            },
+            intent: "buy"
+          }
+        })
+      }),
+      { params: Promise.resolve({ token: "invite-token" }) }
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      lead: {
+        id: "lead-1",
+        agentId: "agent-1",
+        buyerName: "Taylor Verify",
+        recommendation: "show",
+        score: 8.9
+      }
+    })
+    expect(mockCaptureServerError).toHaveBeenCalledWith(
+      expect.any(Error),
+      "api.intake.submit.analytics"
+    )
   })
 })

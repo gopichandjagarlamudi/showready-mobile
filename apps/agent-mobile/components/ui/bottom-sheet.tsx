@@ -128,10 +128,11 @@ const styles = StyleSheet.create({
     backgroundColor: mobileTheme.colors.surface,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: 28,
     gap: 16,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
+    minHeight: 288,
     maxHeight: "88%",
     ...mobileTheme.elevation.floating
   },
@@ -178,6 +179,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }]
   },
   content: {
-    gap: 12
+    gap: 12,
+    paddingBottom: 12
   }
 })

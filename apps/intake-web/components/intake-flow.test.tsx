@@ -73,8 +73,26 @@ describe("IntakeFlow", () => {
   const fetchMock = vi.fn()
   const assignMock = vi.fn()
 
+  function getLastPostedDraft() {
+    const lastCall = fetchMock.mock.calls.at(-1)
+
+    if (!lastCall) {
+      throw new Error("Expected fetch to have been called.")
+    }
+
+    const [, init] = lastCall
+    const body = init?.body
+
+    if (typeof body !== "string") {
+      throw new Error("Expected fetch body to be a JSON string.")
+    }
+
+    return JSON.parse(body).draft
+  }
+
   beforeEach(() => {
     fetchMock.mockReset()
+    assignMock.mockReset()
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true })
@@ -247,6 +265,139 @@ describe("IntakeFlow", () => {
         })
       )
     })
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith("/intake/invite-token/complete")
+    })
+  })
+
+  it("allows buyer property type to save multiple selected concrete choices", async () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    await advanceUntilQuestion("What type of property are you looking for?")
+
+    fireEvent.click(screen.getByRole("button", { name: "Condo" }))
+    fireEvent.click(screen.getByRole("button", { name: "Townhouse" }))
+    expect(screen.queryByRole("button", { name: "Other" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(getLastPostedDraft().buyer.propertyType).toEqual(["condo", "townhouse"])
+    })
+  })
+
+  it("allows rental place type to save multiple selected concrete choices", async () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    await advanceUntilQuestion("Are you buying a property or renting?")
+    fireEvent.click(screen.getByRole("button", { name: "Renting" }))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await advanceUntilQuestion("What type of place are you looking for?")
+
+    fireEvent.click(screen.getByRole("button", { name: "Condo" }))
+    fireEvent.click(screen.getByRole("button", { name: "House" }))
+    expect(screen.queryByRole("button", { name: "Not sure" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(getLastPostedDraft().rental.placeType).toEqual(["condo", "house"])
+    })
+  })
+
+  it("uses a native date input for the preferred move-in date", async () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    await advanceUntilQuestion("Are you buying a property or renting?")
+    fireEvent.click(screen.getByRole("button", { name: "Renting" }))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await advanceUntilQuestion("Do you have a preferred move-in date?")
+
+    const dateInput = screen.getByLabelText("Do you have a preferred move-in date?")
+    expect(dateInput.getAttribute("type")).toBe("date")
+
+    fireEvent.change(dateInput, {
+      target: { value: "2026-06-15" }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(getLastPostedDraft().rental.preferredMoveInDate).toBe("2026-06-15")
+    })
+  })
+
+  it("redirects to completion when a submit retry reports the intake is already submitted", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/submit")) {
+        return {
+          ok: false,
+          json: async () => ({ error: "This intake has already been submitted." })
+        }
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ ok: true })
+      }
+    })
+
+    render(
+      <IntakeFlow
+        token="invite-token"
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={{
+          ...saleTemplate,
+          customQuestions: [
+            {
+              id: "notes",
+              label: "Anything else?",
+              required: false,
+              type: "text"
+            }
+          ]
+        }}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    await advanceUntilQuestion("Anything else?")
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Already submitted on a previous tap." }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
 
     await waitFor(() => {
       expect(assignMock).toHaveBeenCalledWith("/intake/invite-token/complete")

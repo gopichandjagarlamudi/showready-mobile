@@ -29,7 +29,9 @@ async function advanceCurrentStep(page: Page, stepIndex: number) {
         ? `playwright.${Date.now()}@example.com`
         : type === "tel"
           ? "4165550101"
-          : `Playwright step ${stepIndex + 1}`
+          : type === "date"
+            ? "2026-06-15"
+            : `Playwright step ${stepIndex + 1}`
 
     await input.fill(answer)
     if (primaryAction === "Submit") {
