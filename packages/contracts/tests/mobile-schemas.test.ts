@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
+  AppointmentInitialDataResponseSchema,
   AppointmentMutationSchema,
   ContactMethodSchema,
   FeedbackSubmissionSchema,
+  HomeDataResponseSchema,
   LeadContactInteractionCreateSchema,
   LeadContactInteractionSchema,
   PipelineLeadListQuerySchema,
@@ -112,6 +114,85 @@ describe("mobile API schemas", () => {
     ).toMatchObject({
       id: "interaction-1",
       method: "email"
+    })
+  })
+
+  it("validates consolidated mobile read responses", () => {
+    const lead = {
+      id: "lead-1",
+      agentId: "agent-1",
+      intakeType: "sale",
+      buyerName: "Jordan Lane",
+      token: "invite-token",
+      tokenExpiresAt: "2026-05-11T12:00:00.000Z",
+      status: "submitted",
+      pipelineStage: "ready_to_show",
+      createdAt: "2026-05-04T12:00:00.000Z",
+      updatedAt: "2026-05-04T12:00:00.000Z"
+    }
+    const appointment = {
+      id: "appointment-1",
+      leadId: "lead-1",
+      date: "2026-05-04",
+      startTime: "14:30",
+      status: "scheduled",
+      createdAt: "2026-05-04T12:00:00.000Z",
+      lead: {
+        id: "lead-1",
+        buyerName: "Jordan Lane",
+        pipelineStage: "ready_to_show"
+      },
+      showings: [
+        {
+          id: "showing-1",
+          appointmentId: "appointment-1",
+          address: "123 Queen St W",
+          orderIndex: 0
+        }
+      ]
+    }
+
+    expect(
+      HomeDataResponseSchema.parse({
+        summary: {
+          totalLeads: 4,
+          newLeads: 1,
+          readyToShow: 2,
+          appointmentBooked: 1,
+          nurture: 1,
+          hold: 0,
+          averageScore: 7.5
+        },
+        recentLeads: [lead]
+      })
+    ).toMatchObject({
+      summary: {
+        totalLeads: 4
+      },
+      recentLeads: [
+        {
+          id: "lead-1"
+        }
+      ]
+    })
+
+    expect(
+      AppointmentInitialDataResponseSchema.parse({
+        appointments: {
+          appointments: [appointment],
+          total: 1
+        },
+        eligibleLeads: [lead]
+      })
+    ).toMatchObject({
+      appointments: {
+        total: 1
+      },
+      eligibleLeads: [
+        {
+          id: "lead-1"
+        }
+      ]
     })
   })
 })

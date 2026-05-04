@@ -25,4 +25,17 @@ describe("scale hardening SQL migrations", () => {
       "grant execute on function public.finalize_submitted_invite(uuid, uuid, numeric, text, text, jsonb) to service_role"
     )
   })
+
+  it("keeps mobile read-side detail and appointment lookups indexed", () => {
+    const sql = readFileSync(
+      new URL("./2026-05-04-mobile-read-performance.sql", import.meta.url),
+      "utf8"
+    )
+
+    expect(sql).toContain("lead_answers_lead_updated_at_idx")
+    expect(sql).toContain("lead_scores_lead_created_at_idx")
+    expect(sql).toContain("showings_appointment_order_idx")
+    expect(sql).toContain("leads_agent_updated_id_idx")
+    expect(sql).toContain("public.consume_rate_limits")
+  })
 })

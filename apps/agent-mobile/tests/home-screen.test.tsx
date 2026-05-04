@@ -49,16 +49,18 @@ describe("HomeScreen", () => {
       }
     })
     useMobileApi.mockReturnValue({
-      getDashboardSummary: jest.fn(async () => ({
-        totalLeads: 12,
-        readyToShow: 2,
-        appointmentBooked: 1,
-        newLeads: 3,
-        nurture: 4,
-        hold: 3,
-        averageScore: 7.2
+      getHomeData: jest.fn(async () => ({
+        summary: {
+          totalLeads: 12,
+          readyToShow: 2,
+          appointmentBooked: 1,
+          newLeads: 3,
+          nurture: 4,
+          hold: 3,
+          averageScore: 7.2
+        },
+        recentLeads: []
       })),
-      listLeads: jest.fn(async () => ({ leads: [], total: 0 })),
       createInvite: jest.fn(async () => ({
         token: "invite-token",
         shareUrl: "https://showready.example.com/intake/invite-token",
@@ -168,15 +170,12 @@ describe("HomeScreen", () => {
     expect(screen.queryByText("First run")).toBeNull()
   })
 
-  it("loads only the first recent-lead page for dashboard activity", async () => {
+  it("loads dashboard data through the consolidated home endpoint", async () => {
     const screen = render(<HomeScreen />)
 
     await screen.findByTestId("home-recent-empty")
 
     const api = useMobileApi.mock.results[0]?.value
-    expect(api.listLeads).toHaveBeenCalledWith({
-      limit: 4,
-      offset: 0
-    })
+    expect(api.getHomeData).toHaveBeenCalledTimes(1)
   })
 })

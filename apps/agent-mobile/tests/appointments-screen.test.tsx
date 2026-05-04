@@ -50,7 +50,119 @@ const { captureDiagnosticsError } = jest.requireMock("../lib/diagnostics/service
 
 describe("AppointmentsScreen", () => {
   let saveAppointment: jest.Mock
-  let listAppointments: jest.Mock
+  let getAppointmentsInitialData: jest.Mock
+  let listLeads: jest.Mock
+
+  const eligibleLeads = [
+    {
+      id: "lead-1",
+      agentId: "agent-1",
+      buyerName: "Jordan Lane",
+      buyerEmail: "jordan@example.com",
+      buyerPhone: "416-555-0102",
+      intakeType: "sale",
+      token: "invite-token",
+      tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+      status: "pending",
+      pipelineStage: "ready_to_show",
+      submittedAt: "2026-04-20T12:00:00.000Z",
+      score: 8.2,
+      recommendation: "show",
+      summary: "Ready for a showing.",
+      createdAt: "2026-04-20T12:00:00.000Z",
+      updatedAt: "2026-04-20T12:00:00.000Z"
+    },
+    {
+      id: "lead-2",
+      agentId: "agent-1",
+      buyerName: "Briar Stone",
+      buyerEmail: "briar@example.com",
+      buyerPhone: "416-555-0103",
+      intakeType: "sale",
+      token: "invite-token-2",
+      tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+      status: "pending",
+      pipelineStage: "nurture",
+      submittedAt: "2026-04-20T12:00:00.000Z",
+      score: 6.4,
+      recommendation: "nurture",
+      summary: "Needs a second conversation.",
+      createdAt: "2026-04-20T12:00:00.000Z",
+      updatedAt: "2026-04-20T12:00:00.000Z"
+    },
+    {
+      id: "lead-3",
+      agentId: "agent-1",
+      buyerName: "Casey Ready",
+      buyerEmail: "casey@example.com",
+      buyerPhone: "416-555-0104",
+      intakeType: "sale",
+      token: "invite-token-3",
+      tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+      status: "pending",
+      pipelineStage: "ready_to_show",
+      submittedAt: "2026-04-23T12:00:00.000Z",
+      score: 8.7,
+      recommendation: "show",
+      summary: "Ready soon.",
+      createdAt: "2026-04-23T12:00:00.000Z",
+      updatedAt: "2026-04-23T12:00:00.000Z"
+    },
+    {
+      id: "lead-4",
+      agentId: "agent-1",
+      buyerName: "Morgan Ready",
+      buyerEmail: "morgan@example.com",
+      buyerPhone: "416-555-0105",
+      intakeType: "sale",
+      token: "invite-token-4",
+      tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+      status: "pending",
+      pipelineStage: "ready_to_show",
+      submittedAt: "2026-04-22T12:00:00.000Z",
+      score: 8.5,
+      recommendation: "show",
+      summary: "Ready this week.",
+      createdAt: "2026-04-22T12:00:00.000Z",
+      updatedAt: "2026-04-22T12:00:00.000Z"
+    },
+    {
+      id: "lead-5",
+      agentId: "agent-1",
+      buyerName: "Rowan Ready",
+      buyerEmail: "rowan@example.com",
+      buyerPhone: "416-555-0106",
+      intakeType: "sale",
+      token: "invite-token-5",
+      tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+      status: "pending",
+      pipelineStage: "ready_to_show",
+      submittedAt: "2026-04-19T12:00:00.000Z",
+      score: 8.1,
+      recommendation: "show",
+      summary: "Older ready lead.",
+      createdAt: "2026-04-19T12:00:00.000Z",
+      updatedAt: "2026-04-19T12:00:00.000Z"
+    },
+    {
+      id: "lead-6",
+      agentId: "agent-1",
+      buyerName: "Avery Hold",
+      buyerEmail: "avery@example.com",
+      buyerPhone: "416-555-0107",
+      intakeType: "sale",
+      token: "invite-token-6",
+      tokenExpiresAt: "2026-04-27T00:00:00.000Z",
+      status: "pending",
+      pipelineStage: "hold",
+      submittedAt: "2026-04-24T12:00:00.000Z",
+      score: 5.9,
+      recommendation: "hold",
+      summary: "Can be searched, but not suggested.",
+      createdAt: "2026-04-24T12:00:00.000Z",
+      updatedAt: "2026-04-24T12:00:00.000Z"
+    }
+  ]
 
   beforeEach(() => {
     captureDiagnosticsError.mockClear()
@@ -63,126 +175,25 @@ describe("AppointmentsScreen", () => {
     })
 
     saveAppointment = jest.fn(async () => ({ ok: true }))
-    listAppointments = jest.fn(async () => ({
-      appointments: [],
-      total: 0
+    getAppointmentsInitialData = jest.fn(async () => ({
+      appointments: {
+        appointments: [],
+        total: 0
+      },
+      eligibleLeads: eligibleLeads.slice(0, 3)
+    }))
+    listLeads = jest.fn(async () => ({
+      leads: eligibleLeads,
+      total: eligibleLeads.length
     }))
 
     useMobileApi.mockReturnValue({
-      listAppointments,
-      listLeads: jest.fn(async () => ({
-        leads: [
-        {
-          id: "lead-1",
-          agentId: "agent-1",
-          buyerName: "Jordan Lane",
-          buyerEmail: "jordan@example.com",
-          buyerPhone: "416-555-0102",
-          intakeType: "sale",
-          token: "invite-token",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "pending",
-          pipelineStage: "ready_to_show",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          score: 8.2,
-          recommendation: "show",
-          summary: "Ready for a showing.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-2",
-          agentId: "agent-1",
-          buyerName: "Briar Stone",
-          buyerEmail: "briar@example.com",
-          buyerPhone: "416-555-0103",
-          intakeType: "sale",
-          token: "invite-token-2",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "pending",
-          pipelineStage: "nurture",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          score: 6.4,
-          recommendation: "nurture",
-          summary: "Needs a second conversation.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-3",
-          agentId: "agent-1",
-          buyerName: "Casey Ready",
-          buyerEmail: "casey@example.com",
-          buyerPhone: "416-555-0104",
-          intakeType: "sale",
-          token: "invite-token-3",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "pending",
-          pipelineStage: "ready_to_show",
-          submittedAt: "2026-04-23T12:00:00.000Z",
-          score: 8.7,
-          recommendation: "show",
-          summary: "Ready soon.",
-          createdAt: "2026-04-23T12:00:00.000Z",
-          updatedAt: "2026-04-23T12:00:00.000Z"
-        },
-        {
-          id: "lead-4",
-          agentId: "agent-1",
-          buyerName: "Morgan Ready",
-          buyerEmail: "morgan@example.com",
-          buyerPhone: "416-555-0105",
-          intakeType: "sale",
-          token: "invite-token-4",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "pending",
-          pipelineStage: "ready_to_show",
-          submittedAt: "2026-04-22T12:00:00.000Z",
-          score: 8.5,
-          recommendation: "show",
-          summary: "Ready this week.",
-          createdAt: "2026-04-22T12:00:00.000Z",
-          updatedAt: "2026-04-22T12:00:00.000Z"
-        },
-        {
-          id: "lead-5",
-          agentId: "agent-1",
-          buyerName: "Rowan Ready",
-          buyerEmail: "rowan@example.com",
-          buyerPhone: "416-555-0106",
-          intakeType: "sale",
-          token: "invite-token-5",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "pending",
-          pipelineStage: "ready_to_show",
-          submittedAt: "2026-04-19T12:00:00.000Z",
-          score: 8.1,
-          recommendation: "show",
-          summary: "Older ready lead.",
-          createdAt: "2026-04-19T12:00:00.000Z",
-          updatedAt: "2026-04-19T12:00:00.000Z"
-        },
-        {
-          id: "lead-6",
-          agentId: "agent-1",
-          buyerName: "Avery Hold",
-          buyerEmail: "avery@example.com",
-          buyerPhone: "416-555-0107",
-          intakeType: "sale",
-          token: "invite-token-6",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "pending",
-          pipelineStage: "hold",
-          submittedAt: "2026-04-24T12:00:00.000Z",
-          score: 5.9,
-          recommendation: "hold",
-          summary: "Can be searched, but not suggested.",
-          createdAt: "2026-04-24T12:00:00.000Z",
-          updatedAt: "2026-04-24T12:00:00.000Z"
-        }
-        ],
-        total: 6
+      getAppointmentsInitialData,
+      listAppointments: jest.fn(async () => ({
+        appointments: [],
+        total: 0
       })),
+      listLeads,
       saveAppointment,
       updateAppointmentStatus: jest.fn()
     })
@@ -224,7 +235,7 @@ describe("AppointmentsScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("appointment-lead-option-lead-2")).toBeTruthy()
     })
-    expect(useMobileApi.mock.results[0]?.value.listLeads).toHaveBeenCalledWith({
+    expect(listLeads).toHaveBeenCalledWith({
       scope: "appointment_eligible",
       query: "briar",
       limit: 10,
@@ -255,7 +266,7 @@ describe("AppointmentsScreen", () => {
     const parseError = new Error(
       '[{"origin":"string","code":"invalid_format","message":"Start time must use HH:mm format."}]'
     )
-    listAppointments.mockRejectedValueOnce(parseError)
+    getAppointmentsInitialData.mockRejectedValueOnce(parseError)
 
     const screen = render(<AppointmentsScreen />)
 
@@ -280,10 +291,11 @@ describe("AppointmentsScreen", () => {
 
     fireEvent.press(await screen.findByTestId("appointments-open-schedule-sheet"))
 
-    expect(useMobileApi.mock.results[0]?.value.listLeads).toHaveBeenCalledWith({
-      scope: "appointment_eligible",
-      limit: 3,
-      offset: 0
+    expect(getAppointmentsInitialData).toHaveBeenCalledWith({
+      status: "scheduled",
+      limit: 25,
+      offset: 0,
+      leadLimit: 3
     })
     expect(await screen.findByTestId("appointment-lead-option-lead-3")).toBeTruthy()
     expect(screen.getByTestId("appointment-lead-option-lead-4")).toBeTruthy()

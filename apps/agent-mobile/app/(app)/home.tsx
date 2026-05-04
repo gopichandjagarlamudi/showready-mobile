@@ -38,14 +38,15 @@ export default function HomeScreen() {
       return
     }
 
-    Promise.all([api.getDashboardSummary(), api.listLeads({ limit: 4, offset: 0 })])
-      .then(([dashboardSummary, leadPage]) => {
+    api
+      .getHomeData()
+      .then((homeData) => {
         if (!isMounted) {
           return
         }
 
-        setSummary(dashboardSummary)
-        setRecentLeads(leadPage.leads)
+        setSummary(homeData.summary)
+        setRecentLeads(homeData.recentLeads)
         setLoadState("ready")
       })
       .catch((error: Error) => {

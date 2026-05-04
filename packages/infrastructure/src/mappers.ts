@@ -28,6 +28,11 @@ function normalizeIntakeType(value: string | null | undefined) {
   return value === "rental" ? "rental" : "sale"
 }
 
+function normalizeDateTime(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toISOString()
+}
+
 export function parseCustomQuestions(value: JsonValue): CustomQuestion[] {
   if (!Array.isArray(value)) {
     return []
@@ -185,7 +190,7 @@ export function mapLeadContactInteractionRecord(row: {
     leadId: row.lead_id,
     agentId: row.agent_id,
     method: row.method,
-    occurredAt: row.occurred_at
+    occurredAt: normalizeDateTime(row.occurred_at)
   }
 }
 

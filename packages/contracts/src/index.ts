@@ -341,6 +341,16 @@ export type DashboardSummary = {
   averageScore: number
 }
 
+export type HomeDataResponse = {
+  summary: DashboardSummary
+  recentLeads: Lead[]
+}
+
+export type AppointmentInitialDataResponse = {
+  appointments: AppointmentListResponse
+  eligibleLeads: Lead[]
+}
+
 export type PipelineTab = "active" | "resolved"
 export type PipelineCategory =
   | "all"
@@ -1053,6 +1063,16 @@ export const PipelineLeadListResponseSchema = z.object({
   nextOffset: z.number().int().positive().optional(),
   mode: PipelineModeSchema,
   summaryLabel: z.string().min(1)
+})
+
+export const HomeDataResponseSchema = z.object({
+  summary: DashboardSummarySchema,
+  recentLeads: z.array(LeadSchema)
+})
+
+export const AppointmentInitialDataResponseSchema = z.object({
+  appointments: AppointmentListResponseSchema,
+  eligibleLeads: z.array(LeadSchema)
 })
 
 export const CreateInviteResponseSchema = z.object({

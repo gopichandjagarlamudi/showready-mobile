@@ -104,6 +104,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   )
 
   function refreshWorkspace() {
+    api.clearCache()
     setWorkspaceVersion((current) => current + 1)
   }
 

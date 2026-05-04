@@ -115,4 +115,33 @@ describe("requireMobileAgent", () => {
     await expect(requireMobileAgent(request())).resolves.toMatchObject({ agentId: "agent-1" })
     await expect(requireMobileAgent(request())).rejects.toMatchObject({ status: 429 })
   })
+
+  it("caches completed agent scaffold checks across nearby requests", async () => {
+    process.env.MOBILE_RATE_LIMIT_PRE_AUTH_PER_MINUTE = "10"
+    process.env.MOBILE_RATE_LIMIT_USER_PER_MINUTE = "10"
+    const { requireMobileAgent, resetMobileRateLimits } = await import("./mobile-auth")
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: { id: "agent-1", email: "agent@example.com", user_metadata: {} } },
+      error: null
+    })
+    mockCreateSupabaseAdminClient.mockReturnValue({
+      auth: {
+        getUser
+      }
+    })
+
+    const request = () =>
+      new Request("http://localhost/api/mobile/dashboard", {
+        headers: {
+          authorization: "Bearer valid-token",
+          "x-forwarded-for": "203.0.113.46"
+        }
+      })
+
+    resetMobileRateLimits()
+    await expect(requireMobileAgent(request())).resolves.toMatchObject({ agentId: "agent-1" })
+    await expect(requireMobileAgent(request())).resolves.toMatchObject({ agentId: "agent-1" })
+
+    expect(mockEnsureAgentScaffold).toHaveBeenCalledTimes(1)
+  })
 })

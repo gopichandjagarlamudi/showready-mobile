@@ -1,7 +1,7 @@
-import { createClient } from "@supabase/supabase-js"
+import { createClient, type User } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 import {
-  consumeRateLimit,
+  consumeRateLimits,
   getClientIp,
   getDefaultRateLimitStore,
   resetDefaultRateLimitStore,
@@ -25,6 +25,8 @@ export class MobileAuthError extends Error {
 const WINDOW_MS = 60_000
 const DEFAULT_PRE_AUTH_LIMIT = 120
 const DEFAULT_USER_LIMIT = 120
+const AGENT_SCAFFOLD_CACHE_MS = 5 * 60_000
+const scaffoldedAgentCache = new Map<string, number>()
 
 function readPositiveIntegerEnv(name: string, fallback: number) {
   const value = process.env[name]
@@ -66,27 +68,6 @@ function getUserLimit(request: Request) {
   return readPositiveIntegerEnv("MOBILE_RATE_LIMIT_USER_PER_MINUTE", DEFAULT_USER_LIMIT)
 }
 
-async function enforceRateLimit(input: {
-  key: string
-  limit: number
-  now: number
-}) {
-  const result = await consumeRateLimit(getDefaultRateLimitStore(), {
-    key: input.key,
-    limit: input.limit,
-    windowMs: WINDOW_MS,
-    now: input.now
-  })
-
-  if (!result.allowed) {
-    throw new MobileAuthError(
-      429,
-      "Too many mobile API requests. Please try again shortly.",
-      result.headers
-    )
-  }
-}
-
 async function enforcePreAuthRateLimit(request: Request) {
   const now = Date.now()
   const ip = getClientIp(request)
@@ -96,16 +77,23 @@ async function enforcePreAuthRateLimit(request: Request) {
     DEFAULT_PRE_AUTH_LIMIT
   )
 
-  await enforceRateLimit({
-    key: `mobile:pre-auth:ip:${ip}`,
-    limit,
+  const results = await consumeRateLimits(getDefaultRateLimitStore(), {
+    limits: [
+      {
+        key: `mobile:pre-auth:ip:${ip}`,
+        limit,
+        windowMs: WINDOW_MS
+      },
+      {
+        key: `mobile:pre-auth:route:${routeKey}:ip:${ip}`,
+        limit,
+        windowMs: WINDOW_MS
+      }
+    ],
     now
   })
-  await enforceRateLimit({
-    key: `mobile:pre-auth:route:${routeKey}:ip:${ip}`,
-    limit,
-    now
-  })
+
+  throwIfRateLimited(results)
 }
 
 async function enforceAuthenticatedRateLimit(request: Request, userId: string) {
@@ -114,20 +102,59 @@ async function enforceAuthenticatedRateLimit(request: Request, userId: string) {
   const routeKey = getRouteKey(request)
   const limit = getUserLimit(request)
 
-  await enforceRateLimit({
-    key: `mobile:auth:user:${userId}:route:${routeKey}`,
-    limit,
+  const results = await consumeRateLimits(getDefaultRateLimitStore(), {
+    limits: [
+      {
+        key: `mobile:auth:user:${userId}:route:${routeKey}`,
+        limit,
+        windowMs: WINDOW_MS
+      },
+      {
+        key: `mobile:auth:ip:${ip}:route:${routeKey}`,
+        limit,
+        windowMs: WINDOW_MS
+      }
+    ],
     now
   })
-  await enforceRateLimit({
-    key: `mobile:auth:ip:${ip}:route:${routeKey}`,
-    limit,
-    now
-  })
+
+  throwIfRateLimited(results)
+}
+
+function throwIfRateLimited(
+  results: Array<{ allowed: boolean; headers: RateLimitHeaders }>
+) {
+  const blocked = results.find((result) => !result.allowed)
+
+  if (!blocked) {
+    return
+  }
+
+  throw new MobileAuthError(
+    429,
+    "Too many mobile API requests. Please try again shortly.",
+    blocked.headers
+  )
+}
+
+async function ensureAgentScaffoldCached(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  user: User
+) {
+  const cachedUntil = scaffoldedAgentCache.get(user.id) ?? 0
+  const now = Date.now()
+
+  if (cachedUntil > now) {
+    return
+  }
+
+  await ensureAgentScaffold(admin, user)
+  scaffoldedAgentCache.set(user.id, now + AGENT_SCAFFOLD_CACHE_MS)
 }
 
 export function resetMobileRateLimits() {
   resetDefaultRateLimitStore()
+  scaffoldedAgentCache.clear()
 }
 
 export function mobileErrorResponse(error: MobileAuthError) {
@@ -158,7 +185,7 @@ export async function requireMobileAgent(request: Request) {
   }
 
   await enforceAuthenticatedRateLimit(request, user.id)
-  await ensureAgentScaffold(admin, user)
+  await ensureAgentScaffoldCached(admin, user)
 
   const client = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
     global: {

@@ -130,13 +130,15 @@ export default function AppointmentsScreen() {
     }
 
     try {
-      const [appointmentPage, leadPage] = await Promise.all([
-        api.listAppointments({ status: nextStatus, limit: 25, offset: 0 }),
-        api.listLeads({ scope: "appointment_eligible", limit: 3, offset: 0 })
-      ])
-      setAppointments(appointmentPage.appointments)
-      setAppointmentNextOffset(appointmentPage.nextOffset)
-      setLeads(leadPage.leads)
+      const data = await api.getAppointmentsInitialData({
+        status: nextStatus,
+        limit: 25,
+        offset: 0,
+        leadLimit: 3
+      })
+      setAppointments(data.appointments.appointments)
+      setAppointmentNextOffset(data.appointments.nextOffset)
+      setLeads(data.eligibleLeads)
       setLoadState("ready")
     } catch (error) {
       reportAppointmentsError(error, {

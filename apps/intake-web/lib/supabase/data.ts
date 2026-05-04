@@ -531,7 +531,7 @@ export async function listLeads(
 
   queryBuilder = applySearchFilter(queryBuilder, input.query).range(
     input.offset,
-    input.offset + input.limit - 1
+    input.offset + input.limit
   )
 
   const { data, error, count } = await queryBuilder
@@ -540,19 +540,61 @@ export async function listLeads(
     throw error
   }
 
-  const leads = (data ?? []).map((row: any) => mapLeadRecord(row))
-  const total = count ?? leads.length
+  const fetchedRows = data ?? []
+  const hasMore = fetchedRows.length > input.limit
+  const leads = fetchedRows.slice(0, input.limit).map((row: any) => mapLeadRecord(row))
+  const total = Math.max(
+    count ?? 0,
+    input.offset + leads.length + (hasMore ? 1 : 0)
+  )
 
   return {
     leads,
     total,
-    nextOffset: withNextOffset({
-      total,
-      offset: input.offset,
-      limit: input.limit,
-      visibleCount: leads.length
-    })
+    nextOffset: hasMore ? input.offset + leads.length : undefined
   }
+}
+
+export async function listRecentLeads(client: AppSupabaseClient, agentId: string, limit = 4) {
+  const rowLimit = Math.max(1, Math.min(limit, 10))
+  const { data, error } = await client
+    .from("leads")
+    .select(LEAD_LIST_COLUMNS)
+    .eq("agent_id", agentId)
+    .order("updated_at", { ascending: false })
+    .limit(rowLimit)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).map((row: any) => mapLeadRecord(row))
+}
+
+export async function listAppointmentEligibleLeadSuggestions(
+  client: AppSupabaseClient,
+  agentId: string,
+  limit = 3,
+  query?: string
+) {
+  const rowLimit = Math.max(1, Math.min(limit, 10))
+  let queryBuilder = client
+    .from("leads")
+    .select(LEAD_LIST_COLUMNS)
+    .eq("agent_id", agentId)
+    .in("pipeline_stage", APPOINTMENT_ELIGIBLE_STAGES)
+
+  queryBuilder = applySearchFilter(queryBuilder, query)
+
+  const { data, error } = await queryBuilder
+    .order("updated_at", { ascending: false })
+    .limit(rowLimit)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).map((row: any) => mapLeadRecord(row))
 }
 
 export async function listNewLeadsForReview(client: AppSupabaseClient, agentId: string) {
@@ -652,16 +694,6 @@ function applySearchFilter(queryBuilder: any, searchQuery?: string) {
       `recommendation.ilike.%${escaped}%`
     ].join(",")
   )
-}
-
-function withNextOffset(input: {
-  total: number
-  offset: number
-  limit: number
-  visibleCount: number
-}) {
-  const nextOffset = input.offset + input.visibleCount
-  return nextOffset < input.total ? nextOffset : undefined
 }
 
 async function listScheduledAppointmentSummaries(
@@ -778,7 +810,7 @@ async function loadPipelineFocusCandidates(
   const [{ data: activeRows, error: activeError }, appointmentLeadContext] = await Promise.all([
     client
       .from("leads")
-      .select("*")
+      .select(LEAD_LIST_COLUMNS)
       .eq("agent_id", agentId)
       .in("pipeline_stage", PIPELINE_ACTIVE_STAGES)
       .order("updated_at", { ascending: false })
@@ -786,7 +818,7 @@ async function loadPipelineFocusCandidates(
     appointmentLeadIds.length > 0
       ? client
           .from("leads")
-          .select("*")
+          .select(LEAD_LIST_COLUMNS)
           .eq("agent_id", agentId)
           .in("id", appointmentLeadIds)
       : Promise.resolve({ data: [], error: null })
@@ -896,7 +928,7 @@ export async function listPipelineLeads(
 
   let queryBuilder = client
     .from("leads")
-    .select("*", { count: "exact" })
+    .select(LEAD_LIST_COLUMNS, { count: "exact" })
     .eq("agent_id", agentId)
     .in("pipeline_stage", queryStages)
 
@@ -911,7 +943,7 @@ export async function listPipelineLeads(
   queryBuilder = applySearchFilter(queryBuilder, input.query)
   queryBuilder = queryBuilder
     .order(input.submittedFrom || input.submittedTo ? "submitted_at" : "updated_at", { ascending: false })
-    .range(input.offset, input.offset + input.limit - 1)
+    .range(input.offset, input.offset + input.limit)
 
   const { data, error, count } = await queryBuilder
 
@@ -919,7 +951,9 @@ export async function listPipelineLeads(
     throw error
   }
 
-  const rawLeads = (data ?? []).map((row: any) => toPipelineLead(mapLeadRecord(row)))
+  const fetchedRawLeads = (data ?? []).map((row: any) => toPipelineLead(mapLeadRecord(row)))
+  const hasMore = fetchedRawLeads.length > input.limit
+  const rawLeads = fetchedRawLeads.slice(0, input.limit)
   const leadIds = rawLeads.map((lead) => lead.id)
   const [appointmentsByLeadId, latestContactInteractionsByLeadId] = await Promise.all([
     listScheduledAppointmentSummaries(client, leadIds),
@@ -965,13 +999,11 @@ export async function listPipelineLeads(
       new Date()
     )
   }
-  const total = count ?? leads.length
-  const nextOffset = withNextOffset({
-    total,
-    offset: input.offset,
-    limit: input.limit,
-    visibleCount: rawLeads.length
-  })
+  const total = Math.max(
+    count ?? 0,
+    input.offset + rawLeads.length + (hasMore ? 1 : 0)
+  )
+  const nextOffset = hasMore ? input.offset + rawLeads.length : undefined
 
   return {
     leads,
@@ -1348,13 +1380,15 @@ export async function listAppointments(
     .order("date", { ascending: query.status === "scheduled" })
     .order("start_time", { ascending: query.status === "scheduled" })
     .order("created_at", { ascending: false })
-    .range(query.offset, query.offset + query.limit - 1)
+    .range(query.offset, query.offset + query.limit)
 
   if (appointmentError) {
     throw appointmentError
   }
 
-  const appointments = appointmentRows ?? []
+  const fetchedAppointments = appointmentRows ?? []
+  const hasMore = fetchedAppointments.length > query.limit
+  const appointments = fetchedAppointments.slice(0, query.limit)
   if (appointments.length === 0) {
     return {
       appointments: [],
@@ -1388,17 +1422,15 @@ export async function listAppointments(
       showingMap.get(appointment.id) ?? []
     )
   )
-  const total = count ?? mappedAppointments.length
+  const total = Math.max(
+    count ?? 0,
+    query.offset + mappedAppointments.length + (hasMore ? 1 : 0)
+  )
 
   return {
     appointments: mappedAppointments,
     total,
-    nextOffset: withNextOffset({
-      total,
-      offset: query.offset,
-      limit: query.limit,
-      visibleCount: mappedAppointments.length
-    })
+    nextOffset: hasMore ? query.offset + mappedAppointments.length : undefined
   }
 }
 

@@ -1,22 +1,25 @@
-import { NextResponse } from "next/server"
 import { loadDashboardSummary } from "@showready/application"
 import { DashboardSummarySchema } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
 import { requestErrorResponse } from "@/lib/observability"
+import { createRouteTiming, jsonWithRouteTiming } from "@/lib/route-timing"
 import { getAnalyticsSummary } from "@/lib/supabase/data"
 
 export async function GET(request: Request) {
   let agentId: string | undefined
+  const timing = createRouteTiming()
 
   try {
-    const auth = await requireMobileAgent(request)
+    const auth = await timing.measure("auth", () => requireMobileAgent(request))
     agentId = auth.agentId
     const authenticatedAgentId = auth.agentId
-    const summary = await loadDashboardSummary({
-      getDashboardSummary: () => getAnalyticsSummary(auth.client, authenticatedAgentId)
-    })
+    const summary = await timing.measure("data", () =>
+      loadDashboardSummary({
+        getDashboardSummary: () => getAnalyticsSummary(auth.client, authenticatedAgentId)
+      })
+    )
 
-    return NextResponse.json(DashboardSummarySchema.parse(summary))
+    return jsonWithRouteTiming(DashboardSummarySchema.parse(summary), timing)
   } catch (error) {
     if (error instanceof MobileAuthError) {
       return requestErrorResponse({

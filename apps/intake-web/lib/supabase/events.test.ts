@@ -335,11 +335,12 @@ describe("first-party event persistence", () => {
   it("loads appointments through the appointment tenant scope", async () => {
     const appointmentEq = vi.fn()
     const appointmentSelect = vi.fn()
+    const appointmentRange = vi.fn()
 
     function createQuery(data: unknown[] = [], count = data.length) {
       const query = {
-        select: vi.fn((columns: string) => {
-          appointmentSelect(columns)
+        select: vi.fn((columns: string, options?: unknown) => {
+          appointmentSelect(columns, options)
           return query
         }),
         eq: vi.fn((column: string, value: unknown) => {
@@ -347,7 +348,10 @@ describe("first-party event persistence", () => {
           return query
         }),
         order: vi.fn(() => query),
-        range: vi.fn(() => query),
+        range: vi.fn((from: number, to: number) => {
+          appointmentRange(from, to)
+          return query
+        }),
         then: (onfulfilled?: (value: unknown) => unknown) =>
           Promise.resolve({ data, error: null, count }).then(onfulfilled)
       }
@@ -369,8 +373,10 @@ describe("first-party event persistence", () => {
       total: 0
     })
     expect(appointmentSelect).toHaveBeenCalledWith(
-      expect.stringContaining("leads!inner")
+      expect.stringContaining("leads!inner"),
+      { count: "exact" }
     )
+    expect(appointmentRange).toHaveBeenCalledWith(0, 25)
     expect(appointmentEq).toHaveBeenCalledWith("agent_id", "agent-1")
     expect(appointmentEq).not.toHaveBeenCalledWith("leads.agent_id", "agent-1")
   })

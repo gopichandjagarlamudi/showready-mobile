@@ -1,24 +1,28 @@
-import { NextResponse } from "next/server"
 import {
   PipelineLeadListQuerySchema,
   PipelineLeadListResponseSchema
 } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
 import { requestErrorResponse } from "@/lib/observability"
+import { createRouteTiming, jsonWithRouteTiming } from "@/lib/route-timing"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { listPipelineLeads } from "@/lib/supabase/data"
 
 export async function GET(request: Request) {
   let agentId: string | undefined
+  const timing = createRouteTiming()
 
   try {
-    const auth = await requireMobileAgent(request)
+    const auth = await timing.measure("auth", () => requireMobileAgent(request))
     agentId = auth.agentId
+    const authenticatedAgentId = auth.agentId
     const { searchParams } = new URL(request.url)
     const query = PipelineLeadListQuerySchema.parse(Object.fromEntries(searchParams.entries()))
-    const result = await listPipelineLeads(createSupabaseAdminClient(), agentId, query)
+    const result = await timing.measure("data", () =>
+      listPipelineLeads(createSupabaseAdminClient(), authenticatedAgentId, query)
+    )
 
-    return NextResponse.json(PipelineLeadListResponseSchema.parse(result))
+    return jsonWithRouteTiming(PipelineLeadListResponseSchema.parse(result), timing)
   } catch (error) {
     if (error instanceof MobileAuthError) {
       return requestErrorResponse({

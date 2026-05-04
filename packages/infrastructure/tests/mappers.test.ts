@@ -73,6 +73,18 @@ describe("supabase mappers", () => {
     expect(interaction).not.toHaveProperty("email")
   })
 
+  it("normalizes Supabase timestamptz offsets for mobile contracts", () => {
+    const interaction = mapLeadContactInteractionRecord({
+      id: "interaction-1",
+      lead_id: "lead-1",
+      agent_id: "agent-1",
+      method: "text",
+      occurred_at: "2026-05-04T19:33:34.439+00:00"
+    })
+
+    expect(interaction.occurredAt).toBe("2026-05-04T19:33:34.439Z")
+  })
+
   it("normalizes database appointment times to HH:mm for mobile contracts", () => {
     const appointment = mapAppointment(
       {

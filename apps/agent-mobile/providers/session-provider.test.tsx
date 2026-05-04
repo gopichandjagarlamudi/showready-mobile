@@ -23,6 +23,7 @@ const mockCaptureDiagnosticsError = jest.fn()
 const mockFlushDiagnostics = jest.fn()
 const mockSetDiagnosticsApiClient = jest.fn()
 const mockReportApiRequestError = jest.fn()
+const mockClearCache = jest.fn()
 const mockGetDashboardSummary = jest.fn()
 const mockListNewLeads = jest.fn()
 const mockRegisterPushToken = jest.fn()
@@ -40,6 +41,7 @@ let notificationReceivedListener: ((response: any) => void) | null = null
 
 jest.mock("@showready/infrastructure", () => ({
   createMobileApiClient: jest.fn(() => ({
+    clearCache: (...args: unknown[]) => mockClearCache(...args),
     getDashboardSummary: (...args: unknown[]) => mockGetDashboardSummary(...args),
     listLeads: jest.fn(),
     listNewLeads: (...args: unknown[]) => mockListNewLeads(...args),
@@ -187,6 +189,7 @@ describe("SessionProvider realtime refresh", () => {
     mockFlushDiagnostics.mockResolvedValue(undefined)
     mockSetDiagnosticsApiClient.mockReset()
     mockReportApiRequestError.mockReset()
+    mockClearCache.mockReset()
     mockReportApiRequestError.mockResolvedValue(undefined)
     mockGetDashboardSummary.mockReset()
     mockGetDashboardSummary.mockResolvedValue({

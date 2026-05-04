@@ -5,7 +5,11 @@ vi.mock("next/cache", () => ({
   unstable_cache: (loader: unknown) => loader
 }))
 
-import { listPipelineLeads } from "./data"
+import {
+  listAppointmentEligibleLeadSuggestions,
+  listLeads,
+  listPipelineLeads
+} from "./data"
 
 type LeadRow = {
   id: string
@@ -57,6 +61,14 @@ type Filter = {
   value: unknown
 }
 
+type SelectOptions = { count?: "exact" | "planned"; head?: boolean }
+
+type QueryCallLog = {
+  selectCalls: Array<{ table: string; columns: string; options?: SelectOptions }>
+  limitCalls: Array<{ table: string; count: number }>
+  rangeCalls: Array<{ table: string; from: number; to: number }>
+}
+
 const FUTURE_DATE = "2099-01-02"
 const FUTURE_TIMESTAMP = `${FUTURE_DATE}T12:00:00.000Z`
 
@@ -88,18 +100,20 @@ class FakeQueryBuilder {
   private inFilters: Array<{ column: string; values: unknown[] }> = []
   private limitCount: number | undefined
   private rangeBounds: { from: number; to: number } | undefined
-  private selectOptions: { count?: "exact"; head?: boolean } | undefined
+  private selectOptions: SelectOptions | undefined
 
   constructor(
     private readonly table: string,
     private readonly leadRows: LeadRow[],
     private readonly appointmentRows: AppointmentRow[],
     private readonly contactRows: ContactInteractionRow[],
+    private readonly callLog: QueryCallLog,
     private readonly contactError?: { code: string; message: string }
   ) {}
 
-  select(_columns: string, options?: { count?: "exact"; head?: boolean }) {
+  select(columns: string, options?: SelectOptions) {
     this.selectOptions = options
+    this.callLog.selectCalls.push({ table: this.table, columns, options })
     return this
   }
 
@@ -131,11 +145,13 @@ class FakeQueryBuilder {
 
   limit(count: number) {
     this.limitCount = count
+    this.callLog.limitCalls.push({ table: this.table, count })
     return this
   }
 
   range(from: number, to: number) {
     this.rangeBounds = { from, to }
+    this.callLog.rangeCalls.push({ table: this.table, from, to })
     return this
   }
 
@@ -269,7 +285,16 @@ function createPipelineClient(input: {
   contactRows?: ContactInteractionRow[]
   contactError?: { code: string; message: string }
 }) {
+  const callLog: QueryCallLog = {
+    selectCalls: [],
+    limitCalls: [],
+    rangeCalls: []
+  }
+
   return {
+    selectCalls: callLog.selectCalls,
+    limitCalls: callLog.limitCalls,
+    rangeCalls: callLog.rangeCalls,
     from: vi.fn(
       (table: string) =>
         new FakeQueryBuilder(
@@ -277,11 +302,69 @@ function createPipelineClient(input: {
           input.leadRows,
           input.appointmentRows ?? [],
           input.contactRows ?? [],
+          callLog,
           input.contactError
         )
     )
   }
 }
+
+describe("listLeads", () => {
+  it("keeps exact totals while fetching one extra row for pagination", async () => {
+    const client = createPipelineClient({
+      leadRows: [
+        leadRow({ id: "lead-1", pipeline_stage: "ready_to_show" }),
+        leadRow({ id: "lead-2", pipeline_stage: "nurture" }),
+        leadRow({ id: "lead-3", pipeline_stage: "hold" })
+      ]
+    })
+
+    const result = await listLeads(client as never, "agent-1", {
+      scope: "all",
+      limit: 2,
+      offset: 0
+    })
+
+    expect(result.total).toBe(3)
+    expect(result.nextOffset).toBe(2)
+    expect(result.leads).toHaveLength(2)
+    expect(client.selectCalls).toContainEqual({
+      table: "leads",
+      columns: expect.any(String),
+      options: { count: "exact" }
+    })
+    expect(client.rangeCalls).toContainEqual({
+      table: "leads",
+      from: 0,
+      to: 2
+    })
+  })
+})
+
+describe("listAppointmentEligibleLeadSuggestions", () => {
+  it("loads suggestion rows without requesting a list total", async () => {
+    const client = createPipelineClient({
+      leadRows: [
+        leadRow({ id: "ready", pipeline_stage: "ready_to_show" }),
+        leadRow({ id: "nurture", pipeline_stage: "nurture" }),
+        leadRow({ id: "new", pipeline_stage: "new" })
+      ]
+    })
+
+    const result = await listAppointmentEligibleLeadSuggestions(client as never, "agent-1", 2)
+
+    expect(result.map((lead) => lead.id)).toEqual(["ready", "nurture"])
+    expect(client.selectCalls).toContainEqual({
+      table: "leads",
+      columns: expect.any(String),
+      options: undefined
+    })
+    expect(client.limitCalls).toContainEqual({
+      table: "leads",
+      count: 2
+    })
+  })
+})
 
 describe("listPipelineLeads", () => {
   it("includes appointment-booked leads whose display stage matches the category", async () => {
@@ -350,6 +433,16 @@ describe("listPipelineLeads", () => {
 
     expect(result.leads.map((lead) => lead.id)).toEqual(["direct-ready"])
     expect(result.nextOffset).toBe(2)
+    expect(client.selectCalls).toContainEqual({
+      table: "leads",
+      columns: expect.any(String),
+      options: { count: "exact" }
+    })
+    expect(client.rangeCalls).toContainEqual({
+      table: "leads",
+      from: 0,
+      to: 2
+    })
   })
 
   it("scopes upcoming appointment context to the current agent before capping rows", async () => {
@@ -390,6 +483,11 @@ describe("listPipelineLeads", () => {
     expect(result.leads[0]?.attentionReason).toBe(
       `Showing scheduled ${FUTURE_DATE} at 14:30.`
     )
+    expect(client.selectCalls).toContainEqual({
+      table: "leads",
+      columns: "id",
+      options: { count: "exact", head: true }
+    })
   })
 
   it("boosts recently contacted active leads below scheduled appointments", async () => {

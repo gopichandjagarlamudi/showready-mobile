@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type {
   Appointment,
+  AppointmentInitialDataResponse,
   AppointmentListQuery,
   AppointmentListResponse,
   AuditEventBatch,
@@ -12,6 +13,7 @@ import type {
   FeedbackSubmission,
   FeedbackSubmissionResponse,
   FirstPartyEventBatchResponse,
+  HomeDataResponse,
   Lead,
   LeadContactInteraction,
   LeadListQuery,
@@ -20,12 +22,14 @@ import type {
   PipelineLeadListResponse,
   ProductEventBatch
 } from "@showready/contracts"
+import { AppointmentInitialDataResponseSchema } from "@showready/contracts"
 import { AppointmentListResponseSchema } from "@showready/contracts"
 import { CreateInviteResponseSchema } from "@showready/contracts"
 import { DiagnosticsBatchResponseSchema } from "@showready/contracts"
 import { DashboardSummarySchema } from "@showready/contracts"
 import { FeedbackSubmissionResponseSchema } from "@showready/contracts"
 import { FirstPartyEventBatchResponseSchema } from "@showready/contracts"
+import { HomeDataResponseSchema } from "@showready/contracts"
 import { LeadListResponseSchema } from "@showready/contracts"
 import { LeadContactInteractionSchema } from "@showready/contracts"
 import { PipelineLeadListResponseSchema } from "@showready/contracts"
@@ -36,6 +40,8 @@ type MobileApiClientOptions = {
   apiBaseUrl: string
   getAccessToken: () => Promise<string | null>
   fetcher?: typeof fetch
+  cacheTtlMs?: number
+  now?: () => number
   onRequestError?: (input: {
     path: string
     method: string
@@ -49,10 +55,54 @@ export function createMobileApiClient({
   apiBaseUrl,
   getAccessToken,
   fetcher = fetch,
+  cacheTtlMs = 30_000,
+  now = Date.now,
   onRequestError
 }: MobileApiClientOptions) {
-  async function authorizedFetch(path: string, init: RequestInit = {}) {
-    const token = await getAccessToken()
+  const readCache = new Map<string, { accessToken: string | null; expiresAt: number; value: unknown }>()
+
+  function getCachedValue<T>(path: string, accessToken: string | null): T | undefined {
+    const entry = readCache.get(path)
+
+    if (!entry) {
+      return undefined
+    }
+
+    if (entry.expiresAt <= now()) {
+      readCache.delete(path)
+      return undefined
+    }
+
+    if (entry.accessToken !== accessToken) {
+      readCache.delete(path)
+      return undefined
+    }
+
+    return entry.value as T
+  }
+
+  function setCachedValue(path: string, value: unknown, accessToken: string | null) {
+    if (cacheTtlMs <= 0) {
+      return
+    }
+
+    readCache.set(path, {
+      accessToken,
+      value,
+      expiresAt: now() + cacheTtlMs
+    })
+  }
+
+  function clearReadCache() {
+    readCache.clear()
+  }
+
+  async function authorizedFetch(
+    path: string,
+    init: RequestInit = {},
+    accessToken?: string | null
+  ) {
+    const token = accessToken === undefined ? await getAccessToken() : accessToken
     const headers = new Headers(init.headers)
 
     if (token) {
@@ -65,11 +115,20 @@ export function createMobileApiClient({
     })
   }
 
-  async function request(path: string, init: RequestInit = {}, message: string) {
+  async function request(
+    path: string,
+    init: RequestInit = {},
+    message: string,
+    accessToken?: string | null
+  ) {
     const method = init.method ?? "GET"
 
+    if (method !== "GET") {
+      clearReadCache()
+    }
+
     try {
-      return await authorizedFetch(path, init)
+      return await authorizedFetch(path, init, accessToken)
     } catch {
       return handleApiFailure(path, method, 0, message)
     }
@@ -100,6 +159,43 @@ export function createMobileApiClient({
     }
   }
 
+  async function getJson<T>(input: {
+    path: string
+    message: string
+    parse: (payload: unknown) => T
+    cache?: boolean
+  }) {
+    const accessToken = await getAccessToken()
+
+    if (input.cache !== false) {
+      const cached = getCachedValue<T>(input.path, accessToken)
+
+      if (cached !== undefined) {
+        return cached
+      }
+    }
+
+    const response = await request(input.path, {}, input.message, accessToken)
+
+    if (!response.ok) {
+      return handleApiFailure(input.path, "GET", response.status, input.message)
+    }
+
+    const parsed = await parseJsonResponse({
+      path: input.path,
+      method: "GET",
+      response,
+      message: input.message,
+      parse: input.parse
+    })
+
+    if (input.cache !== false) {
+      setCachedValue(input.path, parsed, accessToken)
+    }
+
+    return parsed
+  }
+
   function buildLeadListPath(input: Partial<LeadListQuery> = {}) {
     const searchParams = new URLSearchParams()
     searchParams.set("scope", input.scope ?? "all")
@@ -123,19 +219,36 @@ export function createMobileApiClient({
     return `/api/mobile/appointments?${searchParams.toString()}`
   }
 
+  function buildAppointmentsInitialPath(input: Partial<AppointmentListQuery> & { leadLimit?: number } = {}) {
+    const searchParams = new URLSearchParams()
+    searchParams.set("status", input.status ?? "scheduled")
+    searchParams.set("limit", String(input.limit ?? 25))
+    searchParams.set("offset", String(input.offset ?? 0))
+    searchParams.set("leadLimit", String(input.leadLimit ?? 3))
+
+    return `/api/mobile/appointments/initial?${searchParams.toString()}`
+  }
+
   return {
+    clearCache() {
+      clearReadCache()
+    },
+
+    async getHomeData(): Promise<HomeDataResponse> {
+      const path = "/api/mobile/home"
+
+      return getJson({
+        path,
+        message: "Unable to load home data.",
+        parse: (payload) => HomeDataResponseSchema.parse(payload)
+      })
+    },
+
     async getDashboardSummary(): Promise<DashboardSummary> {
       const path = "/api/mobile/dashboard"
-      const response = await request(path, {}, "Unable to load dashboard summary.")
 
-      if (!response.ok) {
-        return handleApiFailure(path, "GET", response.status, "Unable to load dashboard summary.")
-      }
-
-      return parseJsonResponse({
+      return getJson({
         path,
-        method: "GET",
-        response,
         message: "Unable to load dashboard summary.",
         parse: (payload) => DashboardSummarySchema.parse(payload)
       })
@@ -164,16 +277,9 @@ export function createMobileApiClient({
         ...normalizedInput,
         scope: "new"
       })
-      const response = await request(path, {}, "Unable to load new leads.")
 
-      if (!response.ok) {
-        return handleApiFailure(path, "GET", response.status, "Unable to load new leads.")
-      }
-
-      return parseJsonResponse({
+      return getJson({
         path,
-        method: "GET",
-        response,
         message: "Unable to load new leads.",
         parse: (payload) => LeadListResponseSchema.parse(payload)
       })
@@ -181,16 +287,9 @@ export function createMobileApiClient({
 
     async listLeads(input: Partial<LeadListQuery> | string = {}): Promise<LeadListResponse> {
       const path = buildLeadListPath(typeof input === "string" ? {} : input)
-      const response = await request(path, {}, "Unable to load leads.")
 
-      if (!response.ok) {
-        return handleApiFailure(path, "GET", response.status, "Unable to load leads.")
-      }
-
-      return parseJsonResponse({
+      return getJson({
         path,
-        method: "GET",
-        response,
         message: "Unable to load leads.",
         parse: (payload) => LeadListResponseSchema.parse(payload)
       })
@@ -227,16 +326,9 @@ export function createMobileApiClient({
       searchParams.set("offset", String(query.offset))
 
       const path = `/api/mobile/pipeline/leads?${searchParams.toString()}`
-      const response = await request(path, {}, "Unable to load pipeline leads.")
 
-      if (!response.ok) {
-        return handleApiFailure(path, "GET", response.status, "Unable to load pipeline leads.")
-      }
-
-      return parseJsonResponse({
+      return getJson({
         path,
-        method: "GET",
-        response,
         message: "Unable to load pipeline leads.",
         parse: (payload) => PipelineLeadListResponseSchema.parse(payload)
       })
@@ -310,18 +402,23 @@ export function createMobileApiClient({
       input: Partial<AppointmentListQuery> | Appointment["status"] = {}
     ): Promise<AppointmentListResponse> {
       const path = buildAppointmentListPath(typeof input === "string" ? { status: input } : input)
-      const response = await request(path, {}, "Unable to load appointments.")
 
-      if (!response.ok) {
-        return handleApiFailure(path, "GET", response.status, "Unable to load appointments.")
-      }
-
-      return parseJsonResponse({
+      return getJson({
         path,
-        method: "GET",
-        response,
         message: "Unable to load appointments.",
         parse: (payload) => AppointmentListResponseSchema.parse(payload)
+      })
+    },
+
+    async getAppointmentsInitialData(
+      input: Partial<AppointmentListQuery> & { leadLimit?: number } = {}
+    ): Promise<AppointmentInitialDataResponse> {
+      const path = buildAppointmentsInitialPath(input)
+
+      return getJson({
+        path,
+        message: "Unable to load appointment data.",
+        parse: (payload) => AppointmentInitialDataResponseSchema.parse(payload)
       })
     },
 

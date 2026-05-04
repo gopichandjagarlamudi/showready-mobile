@@ -3,6 +3,283 @@ import { createMobileApiClient } from "../src/mobile-api"
 import { MobileApiError } from "../src/errors"
 
 describe("createMobileApiClient", () => {
+  it("loads consolidated home and appointment initial data through one request each", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            summary: {
+              totalLeads: 12,
+              newLeads: 3,
+              readyToShow: 2,
+              appointmentBooked: 1,
+              nurture: 4,
+              hold: 2,
+              averageScore: 7.4
+            },
+            recentLeads: []
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            appointments: {
+              appointments: [],
+              total: 0
+            },
+            eligibleLeads: []
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    await expect(client.getHomeData()).resolves.toMatchObject({
+      summary: {
+        totalLeads: 12
+      },
+      recentLeads: []
+    })
+    await expect(client.getAppointmentsInitialData({ status: "completed" })).resolves.toMatchObject({
+      appointments: {
+        total: 0
+      },
+      eligibleLeads: []
+    })
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/mobile/home",
+      expect.any(Object)
+    )
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/mobile/appointments/initial?status=completed&limit=25&offset=0&leadLimit=3",
+      expect.any(Object)
+    )
+  })
+
+  it("caches mobile GET responses briefly and clears them after mutations", async () => {
+    let now = 1_000
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            lead: {
+              id: "lead-1",
+              agentId: "agent-1",
+              intakeType: "sale",
+              buyerName: "Jordan Lane",
+              token: "invite-token",
+              tokenExpiresAt: "2026-05-11T12:00:00.000Z",
+              status: "submitted",
+              pipelineStage: "nurture",
+              createdAt: "2026-05-04T12:00:00.000Z",
+              updatedAt: "2026-05-04T12:00:00.000Z"
+            }
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher,
+      cacheTtlMs: 30_000,
+      now: () => now
+    })
+
+    await expect(client.listLeads({ limit: 4, offset: 0 })).resolves.toEqual({
+      leads: [],
+      total: 0
+    })
+    await expect(client.listLeads({ limit: 4, offset: 0 })).resolves.toEqual({
+      leads: [],
+      total: 0
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    await client.moveLead("lead-1", "nurture")
+    await client.listLeads({ limit: 4, offset: 0 })
+    expect(fetcher).toHaveBeenCalledTimes(3)
+
+    now += 31_000
+    await client.listLeads({ limit: 4, offset: 0 })
+    expect(fetcher).toHaveBeenCalledTimes(4)
+  })
+
+  it("clears cached GET responses on demand for workspace refreshes", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher,
+      cacheTtlMs: 30_000
+    })
+
+    await client.listLeads({ limit: 4, offset: 0 })
+    await client.listLeads({ limit: 4, offset: 0 })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    client.clearCache()
+    await client.listLeads({ limit: 4, offset: 0 })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not reuse cached GET responses across access tokens", async () => {
+    let accessToken = "token-a"
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 0
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => accessToken,
+      fetcher,
+      cacheTtlMs: 30_000
+    })
+
+    await client.listLeads({ limit: 4, offset: 0 })
+    await client.listLeads({ limit: 4, offset: 0 })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    accessToken = "token-b"
+    await client.listLeads({ limit: 4, offset: 0 })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+
+    const secondFetchCall = fetcher.mock.calls[1] as unknown as [string, RequestInit] | undefined
+    const headers = secondFetchCall?.[1].headers as Headers
+    expect(headers.get("Authorization")).toBe("Bearer token-b")
+  })
+
   it("submits authenticated feedback", async () => {
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify({ ok: true }), {

@@ -1,20 +1,22 @@
-import { NextResponse } from "next/server"
 import { LeadListQuerySchema } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
 import { requestErrorResponse } from "@/lib/observability"
+import { createRouteTiming, jsonWithRouteTiming } from "@/lib/route-timing"
 import { listLeads } from "@/lib/supabase/data"
 
 export async function GET(request: Request) {
   let agentId: string | undefined
+  const timing = createRouteTiming()
 
   try {
-    const auth = await requireMobileAgent(request)
+    const auth = await timing.measure("auth", () => requireMobileAgent(request))
     agentId = auth.agentId
+    const authenticatedAgentId = auth.agentId
     const { searchParams } = new URL(request.url)
     const query = LeadListQuerySchema.parse(Object.fromEntries(searchParams.entries()))
-    const result = await listLeads(auth.client, agentId, query)
+    const result = await timing.measure("data", () => listLeads(auth.client, authenticatedAgentId, query))
 
-    return NextResponse.json(result)
+    return jsonWithRouteTiming(result, timing)
   } catch (error) {
     if (error instanceof MobileAuthError) {
       return requestErrorResponse({
