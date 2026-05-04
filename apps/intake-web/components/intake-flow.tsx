@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useMemo, useRef, useState, useTransition } from "react"
 import type {
   IntakeDraft,
   QuestionDefinition,
@@ -128,6 +128,12 @@ function getInputType(type: QuestionDefinition["type"]) {
   return "text"
 }
 
+function persistFallbackMessage(shouldSubmit: boolean) {
+  return shouldSubmit
+    ? "Unable to submit intake. Check your connection and try again."
+    : "Unable to save answer. Check your connection and try again."
+}
+
 export function IntakeFlow({
   token,
   branding,
@@ -150,7 +156,8 @@ export function IntakeFlow({
   const [error, setError] = useState<string | null>(null)
   const [website, setWebsite] = useState("")
   const [guardStartedAt] = useState(() => Date.now())
-  const [isPending, startTransition] = useTransition()
+  const autosaveSequence = useRef(0)
+  const [isSubmitting, startSubmitTransition] = useTransition()
 
   const activeTemplate = draft.intent === "rent" ? rentalTemplate : saleTemplate
   const resolvedRequiredQuestions = draft.intent
@@ -231,48 +238,84 @@ export function IntakeFlow({
     return Boolean(value)
   }
 
-  function persist(nextDraft: IntakeDraft, shouldSubmit = false) {
+  async function sendDraft(nextDraft: IntakeDraft, shouldSubmit = false) {
+    const response = await fetch(
+      shouldSubmit
+        ? `/api/intake/${token}/submit`
+        : `/api/intake/${token}/autosave`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          draft: nextDraft,
+          guard: {
+            startedAt: guardStartedAt,
+            website
+          }
+        })
+      }
+    )
+
+    const payload = await response
+      .json()
+      .catch(() => ({ error: persistFallbackMessage(shouldSubmit) }))
+
+    if (!response.ok) {
+      return {
+        ok: false as const,
+        error: payload.error ?? persistFallbackMessage(shouldSubmit)
+      }
+    }
+
+    return { ok: true as const }
+  }
+
+  function persistAutosave(nextDraft: IntakeDraft) {
     setError(null)
-    startTransition(async () => {
-      const response = await fetch(
-        shouldSubmit
-          ? `/api/intake/${token}/submit`
-          : `/api/intake/${token}/autosave`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            draft: nextDraft,
-            guard: {
-              startedAt: guardStartedAt,
-              website
-            }
-          })
-        }
-      )
+    setIndex((previous) => Math.min(previous + 1, steps.length - 1))
 
-      const payload = await response.json()
+    const sequence = autosaveSequence.current + 1
+    autosaveSequence.current = sequence
 
-      if (!response.ok) {
-        const message = payload.error ?? "Unable to save your progress right now."
-
-        if (shouldSubmit && isAlreadySubmittedError(message)) {
-          window.location.assign(completionPath)
+    void sendDraft(nextDraft)
+      .then((result) => {
+        if (sequence !== autosaveSequence.current) {
           return
         }
 
-        setError(message)
-        return
-      }
+        if (!result.ok) {
+          setError(result.error)
+        }
+      })
+      .catch(() => {
+        if (sequence === autosaveSequence.current) {
+          setError(persistFallbackMessage(false))
+        }
+      })
+  }
 
-      if (shouldSubmit) {
+  function persistSubmit(nextDraft: IntakeDraft) {
+    setError(null)
+    startSubmitTransition(async () => {
+      try {
+        const result = await sendDraft(nextDraft, true)
+
+        if (!result.ok) {
+          if (isAlreadySubmittedError(result.error)) {
+            window.location.assign(completionPath)
+            return
+          }
+
+          setError(result.error)
+          return
+        }
+
         window.location.assign(completionPath)
-        return
+      } catch {
+        setError(persistFallbackMessage(true))
       }
-
-      setIndex((previous) => Math.min(previous + 1, steps.length - 1))
     })
   }
 
@@ -292,11 +335,11 @@ export function IntakeFlow({
     }
 
     if (isLastStep) {
-      persist(draft, true)
+      persistSubmit(draft)
       return
     }
 
-    persist(draft)
+    persistAutosave(draft)
   }
 
   function handleSkip() {
@@ -305,11 +348,11 @@ export function IntakeFlow({
     }
 
     if (isLastStep) {
-      persist(draft, true)
+      persistSubmit(draft)
       return
     }
 
-    persist(draft)
+    persistAutosave(draft)
   }
 
   return (
@@ -427,20 +470,14 @@ export function IntakeFlow({
           ) : null}
 
           <div className="intake-actions">
-            <button type="submit" disabled={isPending} className="intake-primary">
-              {isPending
-                ? isLastStep
-                  ? "Submitting..."
-                  : "Saving..."
-                : isLastStep
-                  ? "Submit"
-                  : "Continue"}
+            <button type="submit" disabled={isSubmitting} className="intake-primary">
+              {isSubmitting ? "Submitting..." : isLastStep ? "Submit" : "Continue"}
             </button>
             {!current.required ? (
               <button
                 type="button"
                 onClick={handleSkip}
-                disabled={isPending}
+                disabled={isSubmitting}
                 className="intake-secondary"
               >
                 Skip

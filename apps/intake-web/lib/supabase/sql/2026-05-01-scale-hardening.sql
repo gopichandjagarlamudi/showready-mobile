@@ -165,7 +165,7 @@ begin
   values (
     p_lead_id,
     p_score,
-    p_recommendation,
+    p_recommendation::public.recommendation,
     p_summary,
     coalesce(p_breakdown, '{}'::jsonb),
     false
@@ -176,7 +176,7 @@ begin
   set status = 'submitted',
       pipeline_stage = 'new',
       score = p_score,
-      recommendation = p_recommendation,
+      recommendation = p_recommendation::public.recommendation,
       reviewed_stage = null,
       reviewed_at = null,
       summary = p_summary,

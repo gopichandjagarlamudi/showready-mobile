@@ -1,11 +1,15 @@
+import DateTimePicker from "@react-native-community/datetimepicker"
 import { useEffect, useMemo, useState } from "react"
-import { StyleSheet, Switch, Text, View } from "react-native"
+import { Feather } from "@expo/vector-icons"
+import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
+import { BottomSheet } from "@/components/ui/bottom-sheet"
 import { FormField } from "@/components/ui/form-field"
 import { InlineMessage } from "@/components/ui/inline-message"
 import { SurfaceCard } from "@/components/ui/surface-card"
+import { shareCsvFile } from "@/lib/share-csv"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
@@ -15,12 +19,39 @@ type FormState = {
   licenseNumber: string
   emailNotificationsEnabled: boolean
 }
+type ExportPicker = "from" | "to" | null
 
 const emptyForm: FormState = {
   fullName: "",
   brokerage: "",
   licenseNumber: "",
   emailNotificationsEnabled: false
+}
+
+function padNumber(value: number) {
+  return String(value).padStart(2, "0")
+}
+
+function formatApiDate(value: Date) {
+  return `${value.getFullYear()}-${padNumber(value.getMonth() + 1)}-${padNumber(value.getDate())}`
+}
+
+function formatDateLabel(value: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(value)
+}
+
+function addDays(value: Date, days: number) {
+  const nextDate = new Date(value)
+  nextDate.setDate(nextDate.getDate() + days)
+  return nextDate
+}
+
+function getDeviceTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC"
 }
 
 export default function SettingsScreen() {
@@ -43,11 +74,23 @@ export default function SettingsScreen() {
     message: string
   } | null>(null)
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
+  const [isExportSheetOpen, setIsExportSheetOpen] = useState(false)
+  const [exportFromDate, setExportFromDate] = useState(() => addDays(new Date(), -30))
+  const [exportToDate, setExportToDate] = useState(() => new Date())
+  const [exportPicker, setExportPicker] = useState<ExportPicker>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportNotice, setExportNotice] = useState<{
+    tone: "success" | "warning" | "error"
+    title: string
+    message: string
+  } | null>(null)
 
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(savedForm),
     [form, savedForm]
   )
+  const exportFromApiDate = formatApiDate(exportFromDate)
+  const exportToApiDate = formatApiDate(exportToDate)
 
   useEffect(() => {
     let isMounted = true
@@ -188,6 +231,76 @@ export default function SettingsScreen() {
     }
   }
 
+  function handleExportDateChange(picker: Exclude<ExportPicker, null>) {
+    return (event: { type?: string }, nextValue?: Date) => {
+      if (event?.type === "dismissed" || !nextValue) {
+        if (Platform.OS !== "ios") {
+          setExportPicker(null)
+        }
+        return
+      }
+
+      if (picker === "from") {
+        setExportFromDate(nextValue)
+      } else {
+        setExportToDate(nextValue)
+      }
+
+      if (Platform.OS !== "ios") {
+        setExportPicker(null)
+      }
+    }
+  }
+
+  async function exportLeadData() {
+    if (exportFromApiDate > exportToApiDate) {
+      setExportNotice({
+        tone: "error",
+        title: "Date range invalid",
+        message: "Choose a from date that is on or before the to date."
+      })
+      return
+    }
+
+    setIsExporting(true)
+    setExportNotice(null)
+
+    try {
+      const result = await api.exportLeadsCsv({
+        fromDate: exportFromApiDate,
+        toDate: exportToApiDate,
+        timeZone: getDeviceTimeZone()
+      })
+
+      if (result.rowCount === 0) {
+        setExportNotice({
+          tone: "warning",
+          title: "No leads found",
+          message: "No submitted leads found for that date range."
+        })
+        return
+      }
+
+      await shareCsvFile({
+        fileName: result.fileName,
+        csv: result.csv
+      })
+      setExportNotice({
+        tone: "success",
+        title: "CSV ready",
+        message: `${result.rowCount} submitted lead${result.rowCount === 1 ? "" : "s"} exported.`
+      })
+    } catch (error) {
+      setExportNotice({
+        tone: "error",
+        title: "Unable to export leads",
+        message: error instanceof Error ? error.message : "Try again."
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <ScreenShell
       title="Settings"
@@ -274,6 +387,27 @@ export default function SettingsScreen() {
             />
           </SurfaceCard>
 
+          <SurfaceCard style={styles.exportCard}>
+            <View style={styles.exportHeaderRow}>
+              <View style={styles.exportTitleGroup}>
+                <Text style={styles.preferenceTitle}>Lead Data Export</Text>
+                <Text style={styles.exportMeta}>
+                  Submitted leads only
+                </Text>
+              </View>
+              <ActionButton
+                label="Export lead data"
+                icon="download"
+                tone="secondary"
+                onPress={() => {
+                  setExportNotice(null)
+                  setIsExportSheetOpen(true)
+                }}
+                testID="settings-open-export-sheet-button"
+              />
+            </View>
+          </SurfaceCard>
+
           <SurfaceCard style={styles.feedbackCard}>
             {feedbackNotice ? (
               <InlineMessage
@@ -303,6 +437,98 @@ export default function SettingsScreen() {
           </SurfaceCard>
         </>
       )}
+
+      <BottomSheet
+        visible={isExportSheetOpen}
+        onClose={() => {
+          setIsExportSheetOpen(false)
+          setExportPicker(null)
+        }}
+        title="Export Lead Data"
+        testID="settings-export-sheet"
+      >
+        {exportNotice ? (
+          <InlineMessage
+            tone={exportNotice.tone}
+            title={exportNotice.title}
+            message={exportNotice.message}
+          />
+        ) : null}
+
+        <View style={styles.pickerGroup}>
+          <Text style={styles.fieldLabel}>From date</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open export from date picker"
+            onPress={() => setExportPicker((current) => (current === "from" ? null : "from"))}
+            style={({ pressed }) => [styles.pickerField, pressed ? styles.pressed : null]}
+            testID="settings-export-open-from-date-picker"
+          >
+            <Text style={styles.pickerValue}>{formatDateLabel(exportFromDate)}</Text>
+            <Feather name="calendar" size={18} color={mobileTheme.colors.mutedInk} />
+          </Pressable>
+          {exportPicker === "from" ? (
+            <View style={styles.nativePickerShell}>
+              <DateTimePicker
+                testID="settings-export-native-from-date-picker"
+                mode="date"
+                value={exportFromDate}
+                onChange={handleExportDateChange("from")}
+              />
+              {Platform.OS === "ios" ? (
+                <ActionButton
+                  label="Done with from date"
+                  tone="secondary"
+                  onPress={() => setExportPicker(null)}
+                  testID="settings-export-close-from-date-picker"
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.pickerGroup}>
+          <Text style={styles.fieldLabel}>To date</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open export to date picker"
+            onPress={() => setExportPicker((current) => (current === "to" ? null : "to"))}
+            style={({ pressed }) => [styles.pickerField, pressed ? styles.pressed : null]}
+            testID="settings-export-open-to-date-picker"
+          >
+            <Text style={styles.pickerValue}>{formatDateLabel(exportToDate)}</Text>
+            <Feather name="calendar" size={18} color={mobileTheme.colors.mutedInk} />
+          </Pressable>
+          {exportPicker === "to" ? (
+            <View style={styles.nativePickerShell}>
+              <DateTimePicker
+                testID="settings-export-native-to-date-picker"
+                mode="date"
+                value={exportToDate}
+                onChange={handleExportDateChange("to")}
+              />
+              {Platform.OS === "ios" ? (
+                <ActionButton
+                  label="Done with to date"
+                  tone="secondary"
+                  onPress={() => setExportPicker(null)}
+                  testID="settings-export-close-to-date-picker"
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        <ActionButton
+          label={isExporting ? "Exporting CSV..." : "Export CSV"}
+          icon="download"
+          onPress={() => {
+            void exportLeadData()
+          }}
+          disabled={isExporting}
+          testID="settings-export-submit-button"
+        />
+      </BottomSheet>
     </ScreenShell>
   )
 }
@@ -319,6 +545,20 @@ const styles = StyleSheet.create({
   },
   formCard: {
     gap: 16
+  },
+  exportCard: {
+    gap: 12
+  },
+  exportHeaderRow: {
+    gap: 14
+  },
+  exportTitleGroup: {
+    gap: 4
+  },
+  exportMeta: {
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 20,
+    color: mobileTheme.colors.mutedInk
   },
   feedbackCard: {
     gap: 16
@@ -338,5 +578,44 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: "800",
     color: mobileTheme.colors.ink
+  },
+  pickerGroup: {
+    gap: 8
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0,
+    color: mobileTheme.colors.brandStrong
+  },
+  pickerField: {
+    minHeight: 52,
+    borderRadius: mobileTheme.radii.control,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.borderStrong,
+    backgroundColor: mobileTheme.colors.surface,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  pickerValue: {
+    flex: 1,
+    fontSize: mobileTheme.typography.body,
+    color: mobileTheme.colors.ink,
+    fontWeight: "700"
+  },
+  nativePickerShell: {
+    borderRadius: mobileTheme.radii.control,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border,
+    backgroundColor: mobileTheme.colors.surfaceMuted,
+    padding: 8,
+    gap: 8
+  },
+  pressed: {
+    opacity: 0.88
   }
 })

@@ -315,6 +315,48 @@ describe("createMobileApiClient", () => {
     expect(headers.get("Content-Type")).toBe("application/json")
   })
 
+  it("exports lead CSV data with an authenticated date range request", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response("First Name,Email\nRiley,riley@example.com\n", {
+        status: 200,
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": 'attachment; filename="showready-leads-2026-05-01-to-2026-05-04.csv"',
+          "x-lead-export-count": "1"
+        }
+      })
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    await expect(
+      client.exportLeadsCsv({
+        fromDate: "2026-05-01",
+        toDate: "2026-05-04",
+        timeZone: "America/Toronto"
+      })
+    ).resolves.toEqual({
+      fileName: "showready-leads-2026-05-01-to-2026-05-04.csv",
+      csv: "First Name,Email\nRiley,riley@example.com\n",
+      rowCount: 1
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/leads/export.csv?from=2026-05-01&to=2026-05-04&timeZone=America%2FToronto",
+      expect.objectContaining({
+        headers: expect.any(Headers)
+      })
+    )
+
+    const firstFetchCall = fetcher.mock.calls[0] as unknown as [string, RequestInit] | undefined
+    const headers = firstFetchCall?.[1].headers as Headers
+    expect(headers.get("Authorization")).toBe("Bearer token-123")
+  })
+
   it("submits authenticated product event batches", async () => {
     const fetcher = vi.fn(async () =>
       new Response(

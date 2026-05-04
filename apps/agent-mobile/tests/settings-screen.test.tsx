@@ -6,18 +6,34 @@ jest.mock("../providers/session-provider", () => ({
   useMobileApi: jest.fn()
 }))
 
+jest.mock("../lib/share-csv", () => ({
+  shareCsvFile: jest.fn(async () => undefined)
+}))
+
 const { useSession, useMobileApi } = jest.requireMock("../providers/session-provider") as {
   useSession: jest.Mock
   useMobileApi: jest.Mock
+}
+const { shareCsvFile } = jest.requireMock("../lib/share-csv") as {
+  shareCsvFile: jest.Mock
 }
 
 describe("SettingsScreen", () => {
   let saveSettings: jest.Mock
   let submitFeedback: jest.Mock
+  let exportLeadsCsv: jest.Mock
 
   beforeEach(() => {
+    jest.useFakeTimers()
+    jest.setSystemTime(new Date("2026-05-04T12:00:00.000Z"))
     saveSettings = jest.fn(async () => undefined)
     submitFeedback = jest.fn(async () => ({ ok: true }))
+    exportLeadsCsv = jest.fn(async () => ({
+      fileName: "showready-leads-2026-05-01-to-2026-05-04.csv",
+      csv: "First Name,Email\nRiley,riley@example.com\n",
+      rowCount: 1
+    }))
+    shareCsvFile.mockClear()
     useSession.mockReturnValue({
       session: {
         user: {
@@ -36,8 +52,13 @@ describe("SettingsScreen", () => {
         emailNotificationsEnabled: false
       })),
       saveSettings,
-      submitFeedback
+      submitFeedback,
+      exportLeadsCsv
     })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
   })
 
   it("shows a sign out button and calls sign out when pressed", async () => {
@@ -131,6 +152,96 @@ describe("SettingsScreen", () => {
     await waitFor(() => {
       expect(submitFeedback).not.toHaveBeenCalled()
       expect(screen.getByText("Feedback required")).toBeTruthy()
+    })
+  })
+
+  it("exports lead data from settings and shares the returned CSV file", async () => {
+    const screen = render(<SettingsScreen />)
+
+    await screen.findByTestId("settings-save-button")
+
+    fireEvent.press(screen.getByTestId("settings-open-export-sheet-button"))
+
+    expect(await screen.findByTestId("settings-export-sheet")).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("settings-export-open-from-date-picker"))
+    fireEvent(
+      screen.getByTestId("settings-export-native-from-date-picker"),
+      "onChange",
+      {
+        type: "set",
+        nativeEvent: {
+          timestamp: new Date("2026-05-01T12:00:00.000Z").getTime()
+        }
+      },
+      new Date("2026-05-01T12:00:00.000Z")
+    )
+    fireEvent.press(screen.getByTestId("settings-export-open-to-date-picker"))
+    fireEvent(
+      screen.getByTestId("settings-export-native-to-date-picker"),
+      "onChange",
+      {
+        type: "set",
+        nativeEvent: {
+          timestamp: new Date("2026-05-04T12:00:00.000Z").getTime()
+        }
+      },
+      new Date("2026-05-04T12:00:00.000Z")
+    )
+
+    fireEvent.press(screen.getByTestId("settings-export-submit-button"))
+
+    await waitFor(() => {
+      expect(exportLeadsCsv).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fromDate: "2026-05-01",
+          toDate: "2026-05-04",
+          timeZone: expect.any(String)
+        })
+      )
+      expect(shareCsvFile).toHaveBeenCalledWith({
+        fileName: "showready-leads-2026-05-01-to-2026-05-04.csv",
+        csv: "First Name,Email\nRiley,riley@example.com\n"
+      })
+      expect(screen.getByText("CSV ready")).toBeTruthy()
+    })
+  })
+
+  it("blocks export when the from date is after the to date", async () => {
+    const screen = render(<SettingsScreen />)
+
+    await screen.findByTestId("settings-save-button")
+
+    fireEvent.press(screen.getByTestId("settings-open-export-sheet-button"))
+    fireEvent.press(await screen.findByTestId("settings-export-open-from-date-picker"))
+    fireEvent(
+      screen.getByTestId("settings-export-native-from-date-picker"),
+      "onChange",
+      {
+        type: "set",
+        nativeEvent: {
+          timestamp: new Date("2026-05-05T12:00:00.000Z").getTime()
+        }
+      },
+      new Date("2026-05-05T12:00:00.000Z")
+    )
+    fireEvent.press(screen.getByTestId("settings-export-open-to-date-picker"))
+    fireEvent(
+      screen.getByTestId("settings-export-native-to-date-picker"),
+      "onChange",
+      {
+        type: "set",
+        nativeEvent: {
+          timestamp: new Date("2026-05-04T12:00:00.000Z").getTime()
+        }
+      },
+      new Date("2026-05-04T12:00:00.000Z")
+    )
+    fireEvent.press(screen.getByTestId("settings-export-submit-button"))
+
+    await waitFor(() => {
+      expect(exportLeadsCsv).not.toHaveBeenCalled()
+      expect(screen.getByText("Date range invalid")).toBeTruthy()
     })
   })
 })

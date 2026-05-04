@@ -555,6 +555,65 @@ export async function listLeads(
   }
 }
 
+export async function listSubmittedLeadsForCsvExport(
+  client: AppSupabaseClient,
+  agentId: string,
+  input: {
+    submittedFrom: string
+    submittedTo: string
+    limit?: number
+  }
+): Promise<Lead[]> {
+  const rowLimit = Math.max(1, Math.min(input.limit ?? 10_000, 10_000))
+  const { data, error } = await client
+    .from("leads")
+    .select(LEAD_LIST_COLUMNS)
+    .eq("agent_id", agentId)
+    .eq("status", "submitted")
+    .gte("submitted_at", input.submittedFrom)
+    .lte("submitted_at", input.submittedTo)
+    .order("submitted_at", { ascending: false })
+    .limit(rowLimit + 1)
+
+  if (error) {
+    throw error
+  }
+
+  const leadRows = data ?? []
+
+  if (leadRows.length > rowLimit) {
+    throw new Error("Export contains too many leads. Choose a shorter date range.")
+  }
+
+  if (leadRows.length === 0) {
+    return []
+  }
+
+  const leadIds = leadRows.map((row: any) => row.id)
+  const { data: answerRows, error: answerError } = await client
+    .from("lead_answers")
+    .select("lead_id, question_key, answer_value")
+    .in("lead_id", leadIds)
+    .order("updated_at", { ascending: true })
+
+  if (answerError) {
+    throw answerError
+  }
+
+  const answersByLeadId = new Map<string, Array<{ question_key: string; answer_value: any }>>()
+
+  for (const answerRow of answerRows ?? []) {
+    const existingRows = answersByLeadId.get(answerRow.lead_id) ?? []
+    existingRows.push({
+      question_key: answerRow.question_key,
+      answer_value: answerRow.answer_value
+    })
+    answersByLeadId.set(answerRow.lead_id, existingRows)
+  }
+
+  return leadRows.map((row: any) => mapLeadRecord(row, answersByLeadId.get(row.id) ?? []))
+}
+
 export async function listRecentLeads(client: AppSupabaseClient, agentId: string, limit = 4) {
   const rowLimit = Math.max(1, Math.min(limit, 10))
   const { data, error } = await client
@@ -1798,12 +1857,16 @@ async function upsertLeadAnswersFromDraft(
     return
   }
 
-  const { error } = await client.from("lead_answers").upsert(answerUpserts, {
-    onConflict: "lead_id,question_key"
-  })
+  const { error: deleteError } = await client.from("lead_answers").delete().eq("lead_id", leadId)
 
-  if (error) {
-    throw error
+  if (deleteError) {
+    throw deleteError
+  }
+
+  const { error: insertError } = await client.from("lead_answers").insert(answerUpserts)
+
+  if (insertError) {
+    throw insertError
   }
 }
 

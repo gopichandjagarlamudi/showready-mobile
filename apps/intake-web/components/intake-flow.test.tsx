@@ -28,6 +28,30 @@ const branding = {
   brandColor: "#24533f",
   accentColor: "#c45f2c"
 }
+const flowTransitionTimeout = 3000
+
+function deferredResponse() {
+  let resolve!: (value: { ok: boolean; json: () => Promise<{ ok: boolean }> }) => void
+  const promise = new Promise<{ ok: boolean; json: () => Promise<{ ok: boolean }> }>((next) => {
+    resolve = next
+  })
+
+  return {
+    promise,
+    resolve
+  }
+}
+
+async function waitForStep(label: string) {
+  await waitFor(
+    () => {
+      expect(screen.getByText(label)).toBeTruthy()
+    },
+    {
+      timeout: flowTransitionTimeout
+    }
+  )
+}
 
 async function advanceUntilQuestion(label: string) {
   for (let index = 0; index < 25; index += 1) {
@@ -175,18 +199,14 @@ describe("IntakeFlow", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 2 of 4")).toBeTruthy()
-    })
+    await waitForStep("Step 2 of 4")
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
     fireEvent.click(screen.getByRole("button", { name: "Skip" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 3 of 4")).toBeTruthy()
-    })
+    await waitForStep("Step 3 of 4")
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
@@ -211,6 +231,71 @@ describe("IntakeFlow", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("shows a retryable message when autosave has a network load failure", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("Load failed"))
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true })
+      })
+
+    render(
+      <IntakeFlow
+        token="invite-token"
+        branding={branding}
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Taylor Verify" }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitForStep("Step 2 of 4")
+    await waitFor(() => {
+      expect(screen.getByText("Unable to save answer. Check your connection and try again.")).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }))
+
+    await waitForStep("Step 3 of 4")
+  })
+
+  it("moves to the next question while autosave finishes in the background", async () => {
+    const autosave = deferredResponse()
+    fetchMock.mockReturnValueOnce(autosave.promise)
+
+    render(
+      <IntakeFlow
+        token="invite-token"
+        branding={branding}
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Taylor Verify" }
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitForStep("Step 2 of 4")
+    expect(screen.queryByRole("button", { name: "Saving..." })).toBeNull()
+
+    autosave.resolve({
+      ok: true,
+      json: async () => ({ ok: true })
+    })
+  })
+
   it("expands to the intent-specific questions before submission", async () => {
     render(
       <IntakeFlow
@@ -229,24 +314,18 @@ describe("IntakeFlow", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 2 of 4")).toBeTruthy()
-    })
+    await waitForStep("Step 2 of 4")
 
     fireEvent.click(screen.getByRole("button", { name: "Skip" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 3 of 4")).toBeTruthy()
-    })
+    await waitForStep("Step 3 of 4")
 
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "taylor@example.com" }
     })
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 4 of 4")).toBeTruthy()
-    })
+    await waitForStep("Step 4 of 4")
 
     fireEvent.click(screen.getByRole("button", { name: "Buying a property" }))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
@@ -261,9 +340,7 @@ describe("IntakeFlow", () => {
       )
     })
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 5 of 15")).toBeTruthy()
-    })
+    await waitForStep("Step 5 of 15")
 
     expect(
       screen.getByText("Are you looking to buy for yourself or as an investment?")
@@ -299,24 +376,18 @@ describe("IntakeFlow", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 2 of 5")).toBeTruthy()
-    })
+    await waitForStep("Step 2 of 5")
 
     fireEvent.click(screen.getByRole("button", { name: "Skip" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 3 of 5")).toBeTruthy()
-    })
+    await waitForStep("Step 3 of 5")
 
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "taylor@example.com" }
     })
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
-    await waitFor(() => {
-      expect(screen.getByText("Step 4 of 5")).toBeTruthy()
-    })
+    await waitForStep("Step 4 of 5")
 
     fireEvent.click(screen.getByRole("button", { name: "Buying a property" }))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))

@@ -936,6 +936,11 @@ export const LeadListQuerySchema = z.strictObject({
   limit: PipelineLimitSchema,
   offset: PipelineOffsetSchema
 })
+export const LeadExportQuerySchema = z.strictObject({
+  from: z.string().regex(DATE_ONLY_PATTERN, "Export dates must use YYYY-MM-DD format."),
+  to: z.string().regex(DATE_ONLY_PATTERN, "Export dates must use YYYY-MM-DD format."),
+  timeZone: OptionalTrimmedStringSchema
+})
 export const AppointmentListQuerySchema = z.strictObject({
   status: AppointmentStatusValueSchema.default("scheduled"),
   limit: PipelineLimitSchema,

@@ -229,6 +229,27 @@ export function createMobileApiClient({
     return `/api/mobile/appointments/initial?${searchParams.toString()}`
   }
 
+  function buildLeadExportPath(input: {
+    fromDate: string
+    toDate: string
+    timeZone?: string
+  }) {
+    const searchParams = new URLSearchParams()
+    searchParams.set("from", input.fromDate)
+    searchParams.set("to", input.toDate)
+
+    if (input.timeZone) {
+      searchParams.set("timeZone", input.timeZone)
+    }
+
+    return `/api/mobile/leads/export.csv?${searchParams.toString()}`
+  }
+
+  function parseContentDispositionFileName(value: string | null) {
+    const match = value?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+    return match?.[1] ? decodeURIComponent(match[1]) : undefined
+  }
+
   return {
     clearCache() {
       clearReadCache()
@@ -293,6 +314,33 @@ export function createMobileApiClient({
         message: "Unable to load leads.",
         parse: (payload) => LeadListResponseSchema.parse(payload)
       })
+    },
+
+    async exportLeadsCsv(input: {
+      fromDate: string
+      toDate: string
+      timeZone?: string
+    }): Promise<{
+      fileName: string
+      csv: string
+      rowCount: number
+    }> {
+      const path = buildLeadExportPath(input)
+      const response = await request(path, {}, "Unable to export leads.")
+
+      if (!response.ok) {
+        return handleApiFailure(path, "GET", response.status, "Unable to export leads.")
+      }
+
+      const rowCount = Number.parseInt(response.headers.get("x-lead-export-count") ?? "0", 10)
+
+      return {
+        fileName:
+          parseContentDispositionFileName(response.headers.get("content-disposition")) ??
+          `showready-leads-${input.fromDate}-to-${input.toDate}.csv`,
+        csv: await response.text(),
+        rowCount: Number.isFinite(rowCount) ? rowCount : 0
+      }
     },
 
     async listPipelineLeads(input: Partial<PipelineLeadListQuery>): Promise<PipelineLeadListResponse> {

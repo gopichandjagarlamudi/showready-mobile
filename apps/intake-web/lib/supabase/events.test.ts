@@ -454,6 +454,7 @@ describe("first-party event persistence", () => {
         eq: vi.fn(() => query),
         order: vi.fn(() => query),
         limit: vi.fn(() => query),
+        delete: vi.fn(() => query),
         update: vi.fn((values: Record<string, unknown>) => {
           if (table === "leads" && "status" in values) {
             return leadUpdate(values)
@@ -461,7 +462,7 @@ describe("first-party event persistence", () => {
 
           return query
         }),
-        insert: leadScoresInsert,
+        insert: table === "lead_scores" ? leadScoresInsert : vi.fn(async () => ({ error: null })),
         upsert: vi.fn(async () => ({ error: null })),
         maybeSingle: vi.fn(async () => {
           if (table === "invites") {
@@ -546,5 +547,161 @@ describe("first-party event persistence", () => {
     )
     expect(leadScoresInsert).not.toHaveBeenCalled()
     expect(leadUpdate).not.toHaveBeenCalled()
+  })
+
+  it("submits after saving answers when lead_answers has no upsert conflict index", async () => {
+    const now = "2026-05-04T12:00:00.000Z"
+    const invite = {
+      id: "invite-1",
+      agent_id: "agent-1",
+      token: "invite-token",
+      status: "converted",
+      token_expires_at: "2099-01-01T00:00:00.000Z",
+      created_at: now,
+      updated_at: now,
+      opened_at: now,
+      lead_id: "lead-1",
+      draft_payload: null
+    }
+    const settings = {
+      agent_id: "agent-1",
+      brand_name: "ShowReady",
+      brand_color: "#111111",
+      accent_color: "#0ea5e9",
+      show_threshold: 7,
+      email_notifications_enabled: true,
+      question_template_id: "template-1"
+    }
+    const pendingLead = {
+      id: "lead-1",
+      agent_id: "agent-1",
+      intake_type: "sale",
+      buyer_name: "Taylor Verify",
+      buyer_phone: null,
+      buyer_email: "taylor@example.com",
+      token: "invite-token",
+      token_expires_at: "2099-01-01T00:00:00.000Z",
+      status: "draft",
+      pipeline_stage: "new",
+      submitted_at: null,
+      score: null,
+      recommendation: null,
+      summary: null,
+      created_at: now,
+      updated_at: now,
+      reviewed_at: null,
+      reviewed_stage: null
+    }
+    const submittedLead = {
+      ...pendingLead,
+      status: "submitted",
+      submitted_at: now,
+      score: 8.8,
+      recommendation: "show",
+      summary: "Ready buyer. Invite them to a showing."
+    }
+    const insertedAnswers: unknown[] = []
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "finalize_submitted_invite") {
+        return { data: submittedLead, error: null }
+      }
+
+      return { data: null, error: new Error(`Unexpected RPC: ${name}`) }
+    })
+
+    function createQuery(table: string) {
+      const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        order: vi.fn(() => query),
+        limit: vi.fn(() => query),
+        delete: vi.fn(() => query),
+        update: vi.fn(() => query),
+        insert: vi.fn(async (row: unknown) => {
+          if (table === "lead_answers") {
+            insertedAnswers.push(row)
+          }
+
+          return { error: null }
+        }),
+        upsert: vi.fn(async () => ({
+          error: new Error("there is no unique or exclusion constraint matching the ON CONFLICT specification")
+        })),
+        maybeSingle: vi.fn(async () => {
+          if (table === "invites") {
+            return { data: invite, error: null }
+          }
+
+          if (table === "leads") {
+            return { data: { status: "draft" }, error: null }
+          }
+
+          return { data: null, error: null }
+        }),
+        single: vi.fn(async () => {
+          if (table === "leads") {
+            return { data: pendingLead, error: null }
+          }
+
+          if (table === "agent_settings") {
+            return { data: settings, error: null }
+          }
+
+          return { data: null, error: null }
+        }),
+        then: (onfulfilled?: (value: unknown) => unknown) => {
+          if (table === "lead_answers") {
+            return Promise.resolve({ data: [], error: null }).then(onfulfilled)
+          }
+
+          if (table === "lead_scores") {
+            return Promise.resolve({ data: [], error: null }).then(onfulfilled)
+          }
+
+          return Promise.resolve({ data: [], error: null }).then(onfulfilled)
+        }
+      }
+
+      return query
+    }
+
+    const from = vi.fn((table: string) => createQuery(table))
+    const draft = {
+      contact: {
+        fullName: "Taylor Verify",
+        email: "taylor@example.com"
+      },
+      intent: "buy" as const,
+      buyer: {
+        buyingFor: "myself" as const,
+        timeline: "within_1_month" as const,
+        budgetKnowledge: "know_it" as const,
+        mortgageStatus: "pre_approved" as const,
+        neighborhoods: "Toronto",
+        propertyType: ["condo" as const]
+      }
+    }
+
+    await submitInvite({ from, rpc } as never, "invite-token", { draft })
+
+    expect(insertedAnswers).toHaveLength(1)
+    expect(insertedAnswers[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lead_id: "lead-1",
+          question_key: "contact.fullName"
+        }),
+        expect.objectContaining({
+          lead_id: "lead-1",
+          question_key: "buyer.timeline"
+        })
+      ])
+    )
+    expect(rpc).toHaveBeenCalledWith(
+      "finalize_submitted_invite",
+      expect.objectContaining({
+        p_lead_id: "lead-1"
+      })
+    )
   })
 })

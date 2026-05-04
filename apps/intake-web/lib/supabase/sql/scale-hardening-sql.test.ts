@@ -21,6 +21,7 @@ describe("scale hardening SQL migrations", () => {
     expect(sql).toContain("create or replace function public.finalize_submitted_invite")
     expect(sql).toContain("for update")
     expect(sql).toContain("on conflict do nothing")
+    expect(sql).toContain("p_recommendation::public.recommendation")
     expect(sql).toContain(
       "grant execute on function public.finalize_submitted_invite(uuid, uuid, numeric, text, text, jsonb) to service_role"
     )
