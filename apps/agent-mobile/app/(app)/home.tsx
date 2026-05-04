@@ -38,14 +38,14 @@ export default function HomeScreen() {
       return
     }
 
-    Promise.all([api.getDashboardSummary(), api.listLeads(session.user.id)])
-      .then(([dashboardSummary, leads]) => {
+    Promise.all([api.getDashboardSummary(), api.listLeads({ limit: 4, offset: 0 })])
+      .then(([dashboardSummary, leadPage]) => {
         if (!isMounted) {
           return
         }
 
         setSummary(dashboardSummary)
-        setRecentLeads(leads.slice(0, 4))
+        setRecentLeads(leadPage.leads)
         setLoadState("ready")
       })
       .catch((error: Error) => {

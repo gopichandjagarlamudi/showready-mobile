@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { POST } from "./route"
 
-const { mockRequireMobileAgent, mockRecordDiagnosticEvents } = vi.hoisted(() => ({
+const { mockCreateSupabaseAdminClient, mockRequireMobileAgent, mockRecordDiagnosticEvents, mockRequestErrorResponse } = vi.hoisted(() => ({
+  mockCreateSupabaseAdminClient: vi.fn(),
   mockRequireMobileAgent: vi.fn(),
-  mockRecordDiagnosticEvents: vi.fn()
+  mockRecordDiagnosticEvents: vi.fn(),
+  mockRequestErrorResponse: vi.fn(async (input: { response: { error: string }; status: number }) =>
+    Response.json(input.response, { status: input.status })
+  )
 }))
 
 vi.mock("@/lib/mobile-auth", () => ({
@@ -15,6 +19,8 @@ vi.mock("@/lib/mobile-auth", () => ({
       this.status = status
     }
   },
+  mobileErrorResponse: (error: { message: string; status: number; headers?: HeadersInit }) =>
+    Response.json({ error: error.message }, { status: error.status, headers: error.headers }),
   requireMobileAgent: mockRequireMobileAgent
 }))
 
@@ -22,10 +28,21 @@ vi.mock("@/lib/supabase/data", () => ({
   recordDiagnosticEvents: mockRecordDiagnosticEvents
 }))
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: mockCreateSupabaseAdminClient
+}))
+
+vi.mock("@/lib/observability", () => ({
+  requestErrorResponse: mockRequestErrorResponse
+}))
+
 describe("POST /api/mobile/diagnostics", () => {
   beforeEach(() => {
     mockRequireMobileAgent.mockReset()
+    mockCreateSupabaseAdminClient.mockReset()
     mockRecordDiagnosticEvents.mockReset()
+    mockRequestErrorResponse.mockReset()
+    mockCreateSupabaseAdminClient.mockReturnValue({ service: true })
 
     mockRequireMobileAgent.mockResolvedValue({
       agentId: "agent-1",
@@ -57,10 +74,10 @@ describe("POST /api/mobile/diagnostics", () => {
               eventType: "api.failure",
               category: "api",
               severity: "error",
-              message: "Unable to load dashboard summary.",
+              message: "Unable to load buyer@example.com with Bearer production-token.",
               platform: "ios",
               screen: "/home",
-              requestPath: "/api/mobile/dashboard",
+              requestPath: "/api/mobile/dashboard?email=buyer@example.com&limit=25",
               httpStatus: 500,
               leadId: "lead-1",
               context: {
@@ -94,13 +111,14 @@ describe("POST /api/mobile/diagnostics", () => {
       rejectedEventIds: []
     })
     expect(mockRecordDiagnosticEvents).toHaveBeenCalledWith(
-      {},
+      { service: true },
       "agent-1",
       expect.arrayContaining([
         expect.objectContaining({
           id: "0c59f42d-ece8-4c07-a4ff-2358a0c1553f",
           leadId: "lead-1",
-          requestPath: "/api/mobile/dashboard",
+          message: "Unable to load [redacted-email] with Bearer [redacted]",
+          requestPath: "/api/mobile/dashboard?email&limit",
           context: {
             route: "/home",
             leadId: "lead-1"

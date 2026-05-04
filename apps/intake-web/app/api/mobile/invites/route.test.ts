@@ -7,6 +7,8 @@ const { mockRequireMobileAgent, mockCreateInvite } = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/mobile-auth", () => ({
+  mobileErrorResponse: (error: { message: string; status: number; headers?: HeadersInit }) =>
+    Response.json({ error: error.message }, { status: error.status, headers: error.headers }),
   requireMobileAgent: mockRequireMobileAgent
 }))
 

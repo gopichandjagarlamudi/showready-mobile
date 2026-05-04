@@ -28,12 +28,20 @@ const BREADCRUMBS_KEY = "showready.diagnostics.breadcrumbs"
 
 const LOW_PRIORITY_SEVERITIES = new Set<DiagnosticsEvent["severity"]>(["debug", "info", "warning"])
 
+function createFallbackUuid() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (part) => {
+    const randomValue = Math.floor(Math.random() * 16)
+    const value = part === "x" ? randomValue : (randomValue & 0x3) | 0x8
+    return value.toString(16)
+  })
+}
+
 function createRandomId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID()
   }
 
-  return `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return createFallbackUuid()
 }
 
 async function readJson<T>(storage: DiagnosticsStorage, key: string, fallback: T): Promise<T> {

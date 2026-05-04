@@ -4,11 +4,11 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint"
+    "build": "corepack pnpm -r --workspace-concurrency=4 build",
+    "dev": "corepack pnpm -r --parallel dev",
+    "test": "corepack pnpm -r --workspace-concurrency=4 test",
+    "typecheck": "corepack pnpm -r --workspace-concurrency=4 typecheck",
+    "lint": "corepack pnpm -r --workspace-concurrency=4 lint"
   },
   "devDependencies": {
     "@types/node": "^24.6.1",

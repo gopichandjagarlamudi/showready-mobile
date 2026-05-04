@@ -53,7 +53,7 @@ export function ScreenShell({
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      <View style={styles.body}>{children}</View>
+      <View style={[styles.body, !scrollable ? styles.bodyStatic : null]}>{children}</View>
     </>
   )
 
@@ -143,5 +143,8 @@ const styles = StyleSheet.create({
   },
   body: {
     gap: 16
+  },
+  bodyStatic: {
+    flex: 1
   }
 })

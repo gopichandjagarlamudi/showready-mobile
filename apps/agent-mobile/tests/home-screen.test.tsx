@@ -53,11 +53,12 @@ describe("HomeScreen", () => {
         totalLeads: 12,
         readyToShow: 2,
         appointmentBooked: 1,
+        newLeads: 3,
         nurture: 4,
         hold: 3,
         averageScore: 7.2
       })),
-      listLeads: jest.fn(async () => []),
+      listLeads: jest.fn(async () => ({ leads: [], total: 0 })),
       createInvite: jest.fn(async () => ({
         token: "invite-token",
         shareUrl: "https://showready.example.com/intake/invite-token",
@@ -165,5 +166,17 @@ describe("HomeScreen", () => {
 
     expect(await screen.findByTestId("home-recent-empty")).toBeTruthy()
     expect(screen.queryByText("First run")).toBeNull()
+  })
+
+  it("loads only the first recent-lead page for dashboard activity", async () => {
+    const screen = render(<HomeScreen />)
+
+    await screen.findByTestId("home-recent-empty")
+
+    const api = useMobileApi.mock.results[0]?.value
+    expect(api.listLeads).toHaveBeenCalledWith({
+      limit: 4,
+      offset: 0
+    })
   })
 })

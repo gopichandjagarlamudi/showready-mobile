@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import type { PropsWithChildren } from "react"
+import * as Crypto from "expo-crypto"
 import * as Linking from "expo-linking"
 import * as Notifications from "expo-notifications"
 import { AppState, Platform } from "react-native"
@@ -28,6 +29,18 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 const MobileApiContext = createContext<ReturnType<typeof createMobileApiClient> | null>(null)
+
+function createClientEventId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+
+  return Crypto.randomUUID()
+}
+
+function getMobilePlatform() {
+  return Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "unknown"
+}
 
 function reportAuthDiagnosticsError(error: unknown, context: Record<string, string>) {
   void captureDiagnosticsError(error, {
@@ -63,28 +76,40 @@ async function clearStaleStoredSession(error: unknown) {
 
 export function SessionProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null)
+  const sessionRef = useRef<Session | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [workspaceVersion, setWorkspaceVersion] = useState(0)
   const [unreadNewLeadsCount, setUnreadNewLeadsCount] = useState(0)
   const api = useMemo(
-    () =>
-      createMobileApiClient({
+    () => {
+      const apiBaseUrl = getApiBaseUrl()
+
+      return createMobileApiClient({
         supabase,
-        apiBaseUrl: getApiBaseUrl(),
+        apiBaseUrl,
         getAccessToken: async () => {
+          if (sessionRef.current?.access_token) {
+            return sessionRef.current.access_token
+          }
+
           const { data } = await supabase.auth.getSession()
           return data.session?.access_token ?? null
         },
         onRequestError: (input) => {
           void reportApiRequestError(input)
         }
-      }),
+      })
+    },
     []
   )
 
   function refreshWorkspace() {
     setWorkspaceVersion((current) => current + 1)
   }
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
 
   useEffect(() => {
     setDiagnosticsApiClient(api)
@@ -147,6 +172,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
           await clearStaleStoredSession(error)
 
           if (isMounted) {
+            sessionRef.current = null
             setSession(null)
           }
 
@@ -157,9 +183,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
           return
         }
 
+        sessionRef.current = data.session
         setSession(data.session)
       } catch (error) {
         if (isMounted) {
+          sessionRef.current = null
           setSession(null)
         }
 
@@ -181,6 +209,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     bootstrapSession()
 
     const subscription = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      sessionRef.current = nextSession
       setSession(nextSession)
       setIsBootstrapping(false)
     })
@@ -262,7 +291,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
         {
           event: "*",
           schema: "public",
-          table: "appointments"
+          table: "appointments",
+          filter: `agent_id=eq.${agentId}`
         },
         () => {
           setWorkspaceVersion((current) => current + 1)
@@ -286,10 +316,10 @@ export function SessionProvider({ children }: PropsWithChildren) {
     let isMounted = true
 
     api
-      .listNewLeads(agentId)
-      .then((leads) => {
+      .getDashboardSummary()
+      .then((summary) => {
         if (isMounted) {
-          setUnreadNewLeadsCount(leads.length)
+          setUnreadNewLeadsCount(summary.newLeads)
         }
       })
       .catch(() => {
@@ -332,12 +362,40 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
         await api.registerPushToken({
           expoPushToken: token.data,
-          platform:
-            Platform.OS === "ios"
-              ? "ios"
-              : Platform.OS === "android"
-                ? "android"
-                : "unknown"
+          platform: getMobilePlatform()
+        })
+
+        const occurredAt = new Date().toISOString()
+
+        await api.submitConsentRecords({
+          records: [
+            {
+              id: createClientEventId(),
+              subjectType: "agent",
+              consentType: "push_notifications",
+              status: "granted",
+              source: "mobile-session-provider",
+              occurredAt,
+              metadata: {
+                permissionStatus: granted.status
+              }
+            }
+          ]
+        })
+
+        await api.submitProductEvents({
+          events: [
+            {
+              id: createClientEventId(),
+              occurredAt,
+              eventName: "notification.token_registered",
+              resourceType: "notification",
+              platform: getMobilePlatform(),
+              properties: {
+                permissionStatus: granted.status
+              }
+            }
+          ]
         })
       } catch (error) {
         void captureDiagnosticsError(error, {
@@ -373,6 +431,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       throw error
     }
 
+    sessionRef.current = null
     setSession(null)
   }
 

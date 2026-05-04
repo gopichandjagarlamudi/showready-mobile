@@ -1,8 +1,22 @@
+import DateTimePicker from "@react-native-community/datetimepicker"
 import { Feather } from "@expo/vector-icons"
-import { useDeferredValue, useEffect, useMemo, useState } from "react"
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { memo, useDeferredValue, useEffect, useMemo, useState } from "react"
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native"
 import { router } from "expo-router"
-import type { Lead, LeadStage } from "@showready/contracts"
+import type {
+  LeadStage,
+  PipelineCategory,
+  PipelineLead,
+  PipelineTab
+} from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
@@ -14,16 +28,19 @@ import { SurfaceCard } from "@/components/ui/surface-card"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
-const ACTIVE_SECTIONS = [
-  { stage: "ready_to_show", label: "Ready to Show" },
-  { stage: "nurture", label: "Nurture" },
-  { stage: "hold", label: "Hold" }
-] as const
-const RESOLVED_SECTIONS = [
-  { stage: "closed_won", label: "Closed Won" },
-  { stage: "closed_lost", label: "Closed Lost" },
-  { stage: "archived", label: "Archived" }
-] as const
+const PAGE_SIZE = 25
+const ACTIVE_CATEGORY_OPTIONS: Array<{ value: PipelineCategory; label: string }> = [
+  { value: "all", label: "All active" },
+  { value: "ready_to_show", label: "Ready to Show" },
+  { value: "nurture", label: "Nurture" },
+  { value: "hold", label: "Hold" }
+]
+const RESOLVED_CATEGORY_OPTIONS: Array<{ value: PipelineCategory; label: string }> = [
+  { value: "all", label: "All resolved" },
+  { value: "closed_won", label: "Closed Won" },
+  { value: "closed_lost", label: "Closed Lost" },
+  { value: "archived", label: "Archived" }
+]
 const MOVE_STAGES: Array<
   Extract<
     LeadStage,
@@ -31,225 +48,298 @@ const MOVE_STAGES: Array<
   >
 > = ["ready_to_show", "nurture", "hold", "closed_won", "closed_lost", "archived"]
 
-type PipelineTab = "active" | "resolved"
-type PipelineCategoryStage =
-  | (typeof ACTIVE_SECTIONS)[number]["stage"]
-  | (typeof RESOLVED_SECTIONS)[number]["stage"]
-type PipelineCategoryValue = "all" | PipelineCategoryStage
-type PipelineCategoryOption = {
-  value: PipelineCategoryValue
-  label: string
-  count: number
+type SubmittedDatePreset = "none" | "today" | "yesterday" | "last_7_days" | "pick_date"
+type LoadState = "loading" | "ready" | "error"
+
+function startOfLocalDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate())
 }
 
-function getSectionsForTab(tab: PipelineTab) {
-  return tab === "active" ? ACTIVE_SECTIONS : RESOLVED_SECTIONS
+function addLocalDays(value: Date, days: number) {
+  const next = new Date(value)
+  next.setDate(next.getDate() + days)
+  return next
 }
 
-function getPipelineDisplayStage(lead: Lead): PipelineCategoryStage | null {
-  if (
-    lead.pipelineStage === "ready_to_show" ||
-    lead.pipelineStage === "nurture" ||
-    lead.pipelineStage === "hold" ||
-    lead.pipelineStage === "closed_won" ||
-    lead.pipelineStage === "closed_lost" ||
-    lead.pipelineStage === "archived"
-  ) {
-    return lead.pipelineStage
-  }
+function getSubmittedDateRange(preset: SubmittedDatePreset, selectedDate: Date | null) {
+  const today = startOfLocalDay(new Date())
 
-  if (lead.pipelineStage !== "appointment_booked") {
-    return null
-  }
-
-  if (
-    lead.review?.reviewedStage === "ready_to_show" ||
-    lead.review?.reviewedStage === "nurture" ||
-    lead.review?.reviewedStage === "hold"
-  ) {
-    return lead.review.reviewedStage
-  }
-
-  if (
-    lead.review?.suggestedStage === "ready_to_show" ||
-    lead.review?.suggestedStage === "nurture" ||
-    lead.review?.suggestedStage === "hold"
-  ) {
-    return lead.review.suggestedStage
-  }
-
-  if (lead.recommendation === "show") {
-    return "ready_to_show"
-  }
-
-  if (lead.recommendation === "nurture") {
-    return "nurture"
-  }
-
-  return "hold"
-}
-
-function getEmptyState(tab: PipelineTab, category: PipelineCategoryOption, searchQuery: string) {
-  if (searchQuery.trim().length > 0) {
+  if (preset === "today") {
     return {
-      title: "No leads match this search yet.",
-      body: "Try a name, email, phone number, or a broader category.",
-      eyebrow: "Search"
+      submittedFrom: today.toISOString(),
+      submittedTo: addLocalDays(today, 1).toISOString()
     }
   }
 
-  if (category.value !== "all") {
+  if (preset === "yesterday") {
+    const yesterday = addLocalDays(today, -1)
     return {
-      title: `No ${category.label.toLowerCase()} leads yet.`,
-      body: `Switch categories or move a lead into ${category.label.toLowerCase()} to review it here.`,
-      eyebrow: "Category"
+      submittedFrom: yesterday.toISOString(),
+      submittedTo: today.toISOString()
     }
   }
 
-  return tab === "active"
-    ? {
-        title: "Active pipeline is clear",
-        body: "Freshly reviewed leads will appear here once they move beyond the new-leads queue.",
-        eyebrow: "Active view"
-      }
-    : {
-        title: "Resolved pipeline is clear",
-        body: "Closed and archived leads will appear here once the pipeline starts cycling.",
-        eyebrow: "Resolved view"
-      }
-}
-
-function matchesSearch(lead: Lead, query: string) {
-  if (!query) {
-    return true
+  if (preset === "last_7_days") {
+    return {
+      submittedFrom: addLocalDays(today, -6).toISOString(),
+      submittedTo: addLocalDays(today, 1).toISOString()
+    }
   }
 
-  const displayStage = getPipelineDisplayStage(lead)
-  const searchHaystack = [
-    lead.buyerName,
-    lead.buyerEmail,
-    lead.buyerPhone,
-    lead.summary,
-    lead.recommendation,
-    displayStage?.replaceAll("_", " ")
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
+  if (preset === "pick_date" && selectedDate) {
+    const selectedDay = startOfLocalDay(selectedDate)
+    return {
+      submittedFrom: selectedDay.toISOString(),
+      submittedTo: addLocalDays(selectedDay, 1).toISOString()
+    }
+  }
 
-  return searchHaystack.includes(query)
+  return {}
 }
 
-function sortLeadsForTab(leads: Lead[], tab: PipelineTab) {
-  const sectionOrder = new Map(getSectionsForTab(tab).map((section, index) => [section.stage, index]))
+function formatDateLabel(value: Date | null) {
+  if (!value) {
+    return "Pick date"
+  }
 
-  return [...leads]
-    .filter((lead) => {
-      const displayStage = getPipelineDisplayStage(lead)
-      return displayStage ? sectionOrder.has(displayStage) : false
-    })
-    .sort((left, right) => {
-      const leftStage = getPipelineDisplayStage(left)
-      const rightStage = getPipelineDisplayStage(right)
-      const leftOrder = leftStage ? sectionOrder.get(leftStage) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
-      const rightOrder =
-        rightStage ? sectionOrder.get(rightStage) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
-
-      if (leftOrder !== rightOrder) {
-        return leftOrder - rightOrder
-      }
-
-      const leftTimestamp = left.updatedAt ?? left.createdAt ?? left.submittedAt ?? ""
-      const rightTimestamp = right.updatedAt ?? right.createdAt ?? right.submittedAt ?? ""
-
-      return rightTimestamp.localeCompare(leftTimestamp)
-    })
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(value)
 }
 
-function getCategoryOptions(leads: Lead[], tab: PipelineTab): PipelineCategoryOption[] {
-  const sections = getSectionsForTab(tab)
+function labelForDatePreset(preset: SubmittedDatePreset, selectedDate: Date | null) {
+  if (preset === "today") {
+    return "Submitted today"
+  }
 
-  return [
-    {
-      value: "all",
-      label: tab === "active" ? "All active" : "All resolved",
-      count: leads.length
-    },
-    ...sections.map((section) => ({
-      value: section.stage,
-      label: section.label,
-      count: leads.filter((lead) => getPipelineDisplayStage(lead) === section.stage).length
-    }))
-  ]
+  if (preset === "yesterday") {
+    return "Submitted yesterday"
+  }
+
+  if (preset === "last_7_days") {
+    return "Submitted last 7 days"
+  }
+
+  if (preset === "pick_date") {
+    return `Submitted ${formatDateLabel(selectedDate)}`
+  }
+
+  return "Any submitted date"
 }
+
+function getCategoryOptions(tab: PipelineTab) {
+  return tab === "active" ? ACTIVE_CATEGORY_OPTIONS : RESOLVED_CATEGORY_OPTIONS
+}
+
+function getCategoryLabel(tab: PipelineTab, category: PipelineCategory) {
+  return getCategoryOptions(tab).find((option) => option.value === category)?.label ?? "All active"
+}
+
+function stageLabel(stage: string) {
+  return stage.replaceAll("_", " ")
+}
+
+function getEmptyState(
+  loadState: LoadState,
+  mode: "focus_queue" | "filtered_results",
+  hasSearchOrFilters: boolean
+) {
+  if (loadState === "loading") {
+    return {
+      title: "Loading pipeline",
+      body: "Pulling a focused lead list from the workspace."
+    }
+  }
+
+  if (loadState === "error") {
+    return {
+      title: "Pipeline unavailable",
+      body: "Refresh after the network settles or after signing back in."
+    }
+  }
+
+  if (mode === "focus_queue" && !hasSearchOrFilters) {
+    return {
+      title: "Focus queue is clear",
+      body: "No reviewed active leads need attention right now. Search or filter to browse the wider pipeline."
+    }
+  }
+
+  return {
+    title: "No leads match these filters",
+    body: "Try a broader search, clear the submitted date, or switch stages."
+  }
+}
+
+const PipelineLeadCard = memo(function PipelineLeadCard({
+  lead,
+  onOpen,
+  onMove
+}: {
+  lead: PipelineLead
+  onOpen: (leadId: string) => void
+  onMove: (lead: PipelineLead) => void
+}) {
+  return (
+    <SurfaceCard style={styles.card} testID={`pipeline-card-${lead.id}`}>
+      <View style={styles.header}>
+        <View style={styles.headerMeta}>
+          <Text style={styles.name}>{lead.buyerName}</Text>
+          <Text style={styles.contact}>
+            {lead.buyerEmail ?? lead.buyerPhone ?? "Awaiting contact details"}
+          </Text>
+        </View>
+        <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
+      </View>
+      {lead.attentionReason ? (
+        <View style={styles.attentionRow}>
+          <Feather name="zap" size={14} color={mobileTheme.colors.brandStrong} />
+          <Text style={styles.attentionText}>{lead.attentionReason}</Text>
+        </View>
+      ) : null}
+      <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
+      <View style={styles.primaryActions}>
+        <ActionButton
+          label="Open full detail"
+          icon="chevron-right"
+          onPress={() => onOpen(lead.id)}
+          testID={`pipeline-open-${lead.id}`}
+        />
+        <ActionButton
+          label="Update stage"
+          tone="secondary"
+          icon="sliders"
+          onPress={() => onMove(lead)}
+          testID={`pipeline-open-stage-sheet-${lead.id}`}
+        />
+      </View>
+    </SurfaceCard>
+  )
+})
 
 export default function PipelineScreen() {
   const { session, workspaceVersion = 0 } = useSession()
   const api = useMobileApi()
-  const [leads, setLeads] = useState<Lead[]>([])
+  const [leads, setLeads] = useState<PipelineLead[]>([])
   const [tab, setTab] = useState<PipelineTab>("active")
-  const [selectedCategory, setSelectedCategory] = useState<PipelineCategoryValue>("all")
+  const [category, setCategory] = useState<PipelineCategory>("all")
+  const [draftCategory, setDraftCategory] = useState<PipelineCategory>("all")
   const [searchQuery, setSearchQuery] = useState("")
-  const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase())
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim())
+  const [submittedDatePreset, setSubmittedDatePreset] = useState<SubmittedDatePreset>("none")
+  const [submittedDate, setSubmittedDate] = useState<Date | null>(null)
+  const [draftDatePreset, setDraftDatePreset] = useState<SubmittedDatePreset>("none")
+  const [draftSubmittedDate, setDraftSubmittedDate] = useState<Date | null>(null)
+  const [showDraftDatePicker, setShowDraftDatePicker] = useState(false)
+  const [loadState, setLoadState] = useState<LoadState>("loading")
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [busyLeadId, setBusyLeadId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false)
+  const [summaryLabel, setSummaryLabel] = useState("Loading pipeline")
+  const [mode, setMode] = useState<"focus_queue" | "filtered_results">("focus_queue")
+  const [nextOffset, setNextOffset] = useState<number | undefined>()
+  const [total, setTotal] = useState(0)
+  const [selectedLead, setSelectedLead] = useState<PipelineLead | null>(null)
+  const [busyLeadId, setBusyLeadId] = useState<string | null>(null)
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const submittedDateTime = submittedDate?.getTime() ?? 0
+
+  useEffect(() => {
+    setCategory("all")
+    setDraftCategory("all")
+  }, [tab])
 
   useEffect(() => {
     let isMounted = true
 
-    if (!session) {
-      return
+    async function load() {
+      if (!session) {
+        return
+      }
+
+      const dateRange = getSubmittedDateRange(submittedDatePreset, submittedDate)
+      setLoadState("loading")
+      setLoadError(null)
+
+      try {
+        const result = await api.listPipelineLeads({
+          tab,
+          category,
+          query: deferredSearchQuery || undefined,
+          ...dateRange,
+          limit: PAGE_SIZE,
+          offset: 0
+        })
+
+        if (!isMounted) {
+          return
+        }
+
+        setLeads(result.leads)
+        setSummaryLabel(result.summaryLabel)
+        setMode(result.mode)
+        setNextOffset(result.nextOffset)
+        setTotal(result.total)
+        setLoadState("ready")
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+
+        setLoadError(error instanceof Error ? error.message : "Unable to load pipeline.")
+        setLoadState("error")
+      }
     }
 
-    api
-      .listLeads(session.user.id)
-      .then((rows: Lead[]) => {
-        if (!isMounted) {
-          return
-        }
-
-        setLeads(rows)
-        setLoadState("ready")
-      })
-      .catch((error: Error) => {
-        if (!isMounted) {
-          return
-        }
-
-        setLoadError(error.message)
-        setLoadState("error")
-      })
+    void load()
 
     return () => {
       isMounted = false
     }
-  }, [api, session, workspaceVersion])
+  }, [
+    api,
+    category,
+    deferredSearchQuery,
+    session,
+    submittedDatePreset,
+    submittedDateTime,
+    tab,
+    refreshKey,
+    workspaceVersion
+  ])
 
-  useEffect(() => {
-    setSelectedCategory("all")
-    setIsCategorySheetOpen(false)
-  }, [tab])
+  async function loadMore() {
+    if (!nextOffset || isLoadingMore) {
+      return
+    }
 
-  const tabLeads = useMemo(() => sortLeadsForTab(leads, tab), [leads, tab])
-  const categoryOptions = useMemo(() => getCategoryOptions(tabLeads, tab), [tabLeads, tab])
-  const activeCategory =
-    categoryOptions.find((option) => option.value === selectedCategory) ?? categoryOptions[0]
+    const dateRange = getSubmittedDateRange(submittedDatePreset, submittedDate)
+    setIsLoadingMore(true)
 
-  const filteredLeads = useMemo(
-    () =>
-      tabLeads.filter((lead) => {
-        if (selectedCategory !== "all" && getPipelineDisplayStage(lead) !== selectedCategory) {
-          return false
-        }
+    try {
+      const result = await api.listPipelineLeads({
+        tab,
+        category,
+        query: deferredSearchQuery || undefined,
+        ...dateRange,
+        limit: PAGE_SIZE,
+        offset: nextOffset
+      })
 
-        return matchesSearch(lead, deferredSearchQuery)
-      }),
-    [deferredSearchQuery, selectedCategory, tabLeads]
-  )
+      setLeads((current) => [...current, ...result.leads])
+      setSummaryLabel(result.summaryLabel)
+      setMode(result.mode)
+      setNextOffset(result.nextOffset)
+      setTotal(result.total)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load more leads.")
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
 
   async function moveLead(
     leadId: string,
@@ -263,187 +353,285 @@ export default function PipelineScreen() {
 
     try {
       const result = await api.moveLead(leadId, stage)
-      setLeads((current) => current.map((lead) => (lead.id === leadId ? result.lead : lead)))
-      setMessage(`Moved ${result.lead.buyerName} to ${stage.replaceAll("_", " ")}.`)
+      setRefreshKey((current) => current + 1)
+      setMessage(`Moved ${result.lead.buyerName} to ${stageLabel(stage)}.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to move lead.")
     } finally {
       setBusyLeadId(null)
+      setSelectedLead(null)
     }
   }
 
-  const searchIsActive = searchQuery.trim().length > 0
-  const emptyState = getEmptyState(tab, activeCategory, searchQuery)
+  function openFilterSheet() {
+    setDraftCategory(category)
+    setDraftDatePreset(submittedDatePreset)
+    setDraftSubmittedDate(submittedDate)
+    setShowDraftDatePicker(false)
+    setIsFilterSheetOpen(true)
+  }
+
+  function applyFilters() {
+    setCategory(draftCategory)
+    setSubmittedDatePreset(draftDatePreset)
+    setSubmittedDate(draftDatePreset === "pick_date" ? draftSubmittedDate : null)
+    setIsFilterSheetOpen(false)
+    setShowDraftDatePicker(false)
+  }
+
+  function clearFilters() {
+    setDraftCategory("all")
+    setDraftDatePreset("none")
+    setDraftSubmittedDate(null)
+    setShowDraftDatePicker(false)
+  }
+
+  function handleDatePresetPress(preset: SubmittedDatePreset) {
+    setDraftDatePreset(preset)
+
+    if (preset === "pick_date") {
+      setShowDraftDatePicker(true)
+    } else {
+      setDraftSubmittedDate(null)
+      setShowDraftDatePicker(false)
+    }
+  }
+
+  const hasSearchOrFilters =
+    Boolean(deferredSearchQuery) || category !== "all" || submittedDatePreset !== "none"
+  const filterSummary = useMemo(() => {
+    const parts = [getCategoryLabel(tab, category)]
+
+    if (submittedDatePreset !== "none") {
+      parts.push(labelForDatePreset(submittedDatePreset, submittedDate))
+    }
+
+    return parts.join(" · ")
+  }, [category, submittedDate, submittedDatePreset, tab])
+  const emptyState = getEmptyState(loadState, mode, hasSearchOrFilters)
+  const categoryOptions = getCategoryOptions(tab)
 
   return (
     <ScreenShell
       title="Pipeline"
+      scrollable={false}
+      contentStyle={styles.screenContent}
       testID="pipeline-screen"
     >
-      <SegmentedControl
-        value={tab}
-        onChange={(value) => setTab(value as PipelineTab)}
-        options={[
-          { label: "Active", value: "active" },
-          { label: "Resolved", value: "resolved" }
-        ]}
-        testIDPrefix="pipeline-tab"
+      <FlatList
+        data={leads}
+        keyExtractor={(lead) => lead.id}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            <SegmentedControl
+              value={tab}
+              onChange={(value) => setTab(value as PipelineTab)}
+              options={[
+                { label: "Active", value: "active" },
+                { label: "Resolved", value: "resolved" }
+              ]}
+              testIDPrefix="pipeline-tab"
+            />
+
+            <SurfaceCard style={styles.filtersCard}>
+              <View style={styles.filtersHeader}>
+                <View style={styles.filterHeaderCopy}>
+                  <Text style={styles.fieldLabel}>Visible leads</Text>
+                  <Text style={styles.summaryLabel}>{summaryLabel}</Text>
+                </View>
+                <View style={styles.resultsPill}>
+                  <Text style={styles.resultsPillValue}>{leads.length}</Text>
+                  <Text style={styles.resultsPillLabel}>shown</Text>
+                </View>
+              </View>
+
+              <View style={styles.searchGroup}>
+                <Text style={styles.fieldLabel}>Search leads</Text>
+                <View style={styles.searchInputShell}>
+                  <Feather name="search" size={16} color={mobileTheme.colors.mutedInk} />
+                  <TextInput
+                    testID="pipeline-search-input"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Name, email, phone, or notes"
+                    placeholderTextColor={mobileTheme.colors.mutedInk}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    style={styles.searchInput}
+                  />
+                  {searchQuery.trim().length > 0 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear lead search"
+                      onPress={() => setSearchQuery("")}
+                      style={({ pressed }) => [styles.clearSearchButton, pressed ? styles.pressed : null]}
+                      testID="pipeline-clear-search"
+                    >
+                      <Feather name="x" size={16} color={mobileTheme.colors.mutedInk} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open pipeline filters"
+                accessibilityHint="Filter leads by stage or submitted date."
+                onPress={openFilterSheet}
+                style={({ pressed }) => [styles.filterButton, pressed ? styles.pressed : null]}
+                testID="pipeline-filter-button"
+              >
+                <View style={styles.filterButtonCopy}>
+                  <Text style={styles.fieldLabel}>Filters</Text>
+                  <Text style={styles.filterValue}>{filterSummary}</Text>
+                </View>
+                <Feather name="sliders" size={18} color={mobileTheme.colors.brandStrong} />
+              </Pressable>
+            </SurfaceCard>
+
+            {mode === "focus_queue" && loadState === "ready" ? (
+              <InlineMessage
+                tone="warning"
+                title="Focused queue"
+                message="Showing reviewed active leads worth attention now. Search or filter to browse the wider pipeline."
+              />
+            ) : null}
+
+            {message ? <InlineMessage tone="warning" title="Pipeline update" message={message} /> : null}
+            {loadError ? <InlineMessage tone="error" title="Pipeline unavailable" message={loadError} /> : null}
+          </View>
+        }
+        renderItem={({ item }) => (
+          <PipelineLeadCard
+            lead={item}
+            onOpen={(leadId) => router.push(`/lead/${leadId}`)}
+            onMove={setSelectedLead}
+          />
+        )}
+        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+        ListEmptyComponent={
+          <EmptyState
+            title={emptyState.title}
+            body={emptyState.body}
+            variant={loadState === "loading" ? undefined : "guided"}
+            eyebrow={loadState === "loading" ? undefined : "Pipeline"}
+          />
+        }
+        ListFooterComponent={
+          nextOffset ? (
+            <View style={styles.footer}>
+              <ActionButton
+                label={isLoadingMore ? "Loading leads..." : "Load next 25"}
+                tone="secondary"
+                icon="chevron-down"
+                onPress={() => {
+                  void loadMore()
+                }}
+                disabled={isLoadingMore}
+                testID="pipeline-load-more"
+              />
+              <Text style={styles.footerHint}>{total} total matches. Details load when a lead opens.</Text>
+            </View>
+          ) : loadState === "loading" ? (
+            <View style={styles.footer}>
+              <ActivityIndicator color={mobileTheme.colors.brandStrong} />
+            </View>
+          ) : null
+        }
       />
 
-      <SurfaceCard style={styles.filtersCard}>
-        <View style={styles.filtersHeader}>
-          <Text style={styles.fieldLabel}>Visible leads</Text>
-          <View style={styles.resultsPill}>
-            <Text style={styles.resultsPillValue}>{filteredLeads.length}</Text>
-            <Text style={styles.resultsPillLabel}>shown</Text>
-          </View>
-        </View>
-
-        <View style={styles.searchGroup}>
-          <Text style={styles.fieldLabel}>Search leads</Text>
-          <View style={styles.searchInputShell}>
-            <Feather name="search" size={16} color={mobileTheme.colors.mutedInk} />
-            <TextInput
-              testID="pipeline-search-input"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Name, email, phone, or notes"
-              placeholderTextColor={mobileTheme.colors.mutedInk}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              style={styles.searchInput}
-            />
-            {searchIsActive ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Clear lead search"
-                onPress={() => setSearchQuery("")}
-                style={({ pressed }) => [styles.clearSearchButton, pressed ? styles.pressed : null]}
-                testID="pipeline-clear-search"
-              >
-                <Feather name="x" size={16} color={mobileTheme.colors.mutedInk} />
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open category filter"
-          onPress={() => setIsCategorySheetOpen(true)}
-          style={({ pressed }) => [styles.categoryPicker, pressed ? styles.pressed : null]}
-          testID="pipeline-open-category-sheet"
-        >
-          <View style={styles.categoryPickerCopy}>
-            <Text style={styles.fieldLabel}>Category</Text>
-            <Text style={styles.categoryPickerValue}>{activeCategory.label}</Text>
-          </View>
-          <View style={styles.categoryPickerMeta}>
-            <Text style={styles.categoryPickerCount}>{activeCategory.count}</Text>
-            <Feather name="chevron-down" size={16} color={mobileTheme.colors.mutedInk} />
-          </View>
-        </Pressable>
-
-      </SurfaceCard>
-
-      {message ? <InlineMessage tone="warning" title="Pipeline update" message={message} /> : null}
-
-      {loadState === "loading" ? (
-        <EmptyState title="Loading pipeline" body="Pulling the latest lead movement from the workspace." />
-      ) : loadState === "error" ? (
-        <EmptyState title="Pipeline unavailable" body={loadError ?? "Try again."} />
-      ) : filteredLeads.length === 0 ? (
-        <EmptyState
-          title={emptyState.title}
-          body={emptyState.body}
-          eyebrow={emptyState.eyebrow}
-          actionLabel={searchIsActive ? "Clear search" : undefined}
-          actionTestID={searchIsActive ? "pipeline-clear-empty-search" : undefined}
-          onAction={searchIsActive ? () => setSearchQuery("") : undefined}
-          variant="guided"
-        />
-      ) : (
-        <View style={styles.leadList}>
-          {filteredLeads.map((lead) => {
-            const displayStage = getPipelineDisplayStage(lead) ?? lead.pipelineStage
-
-            return (
-              <SurfaceCard key={lead.id} style={styles.card} testID={`pipeline-card-${lead.id}`}>
-                <View style={styles.header}>
-                  <View style={styles.headerMeta}>
-                    <Text style={styles.name}>{lead.buyerName}</Text>
-                    <Text style={styles.contact}>
-                      {lead.buyerEmail ?? lead.buyerPhone ?? "Awaiting contact details"}
-                    </Text>
-                  </View>
-                  <StageChip stage={displayStage} recommendation={lead.recommendation} />
-                </View>
-                <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
-                <View style={styles.primaryActions}>
-                  <ActionButton
-                    label="Open full detail"
-                    icon="chevron-right"
-                    onPress={() => router.push(`/lead/${lead.id}`)}
-                    testID={`pipeline-open-${lead.id}`}
-                  />
-                  <ActionButton
-                    label="Update stage"
-                    tone="secondary"
-                    icon="sliders"
-                    onPress={() => setSelectedLead(lead)}
-                    disabled={busyLeadId === lead.id}
-                    testID={`pipeline-open-stage-sheet-${lead.id}`}
-                  />
-                </View>
-              </SurfaceCard>
-            )
-          })}
-        </View>
-      )}
-
       <BottomSheet
-        visible={isCategorySheetOpen}
-        onClose={() => setIsCategorySheetOpen(false)}
-        title={tab === "active" ? "Filter active leads" : "Filter resolved leads"}
-        testID="pipeline-category-sheet"
+        visible={isFilterSheetOpen}
+        onClose={() => setIsFilterSheetOpen(false)}
+        title="Filter leads"
+        subtitle="Narrow the pipeline without loading every lead."
+        testID="pipeline-filter-sheet"
       >
-        <View style={styles.categoryOptions}>
-          {categoryOptions.map((option) => {
-            const isSelected = activeCategory.value === option.value
-
-            return (
-              <Pressable
+        <View style={styles.sheetSection}>
+          <Text style={styles.sheetLabel}>Stage</Text>
+          <View style={styles.optionGrid}>
+            {categoryOptions.map((option) => (
+              <FilterChoice
                 key={option.value}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
-                onPress={() => {
-                  setSelectedCategory(option.value)
-                  setIsCategorySheetOpen(false)
-                }}
-                style={({ pressed }) => [
-                  styles.categoryOption,
-                  isSelected ? styles.categoryOptionSelected : null,
-                  pressed ? styles.pressed : null
-                ]}
-                testID={`pipeline-category-option-${option.value}`}
-              >
-                <View style={styles.categoryOptionCopy}>
-                  <Text style={[styles.categoryOptionTitle, isSelected ? styles.categoryOptionTitleSelected : null]}>
-                    {option.label}
-                  </Text>
-                </View>
-                <View style={styles.categoryOptionMeta}>
-                  <Text style={styles.categoryOptionCount}>{option.count}</Text>
-                  <Feather
-                    name={isSelected ? "check" : "chevron-right"}
-                    size={16}
-                    color={isSelected ? mobileTheme.colors.brandStrong : mobileTheme.colors.mutedInk}
-                  />
-                </View>
-              </Pressable>
-            )
-          })}
+                label={option.label}
+                selected={draftCategory === option.value}
+                onPress={() => setDraftCategory(option.value)}
+                testID={`pipeline-stage-option-${option.value}`}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.sheetSection}>
+          <Text style={styles.sheetLabel}>Submitted date</Text>
+          <View style={styles.optionGrid}>
+            <FilterChoice
+              label="Any date"
+              selected={draftDatePreset === "none"}
+              onPress={() => handleDatePresetPress("none")}
+              testID="pipeline-date-preset-none"
+            />
+            <FilterChoice
+              label="Today"
+              selected={draftDatePreset === "today"}
+              onPress={() => handleDatePresetPress("today")}
+              testID="pipeline-date-preset-today"
+            />
+            <FilterChoice
+              label="Yesterday"
+              selected={draftDatePreset === "yesterday"}
+              onPress={() => handleDatePresetPress("yesterday")}
+              testID="pipeline-date-preset-yesterday"
+            />
+            <FilterChoice
+              label="Last 7 days"
+              selected={draftDatePreset === "last_7_days"}
+              onPress={() => handleDatePresetPress("last_7_days")}
+              testID="pipeline-date-preset-last_7_days"
+            />
+            <FilterChoice
+              label={formatDateLabel(draftSubmittedDate)}
+              selected={draftDatePreset === "pick_date"}
+              onPress={() => handleDatePresetPress("pick_date")}
+              testID="pipeline-date-preset-pick_date"
+            />
+          </View>
+
+          {showDraftDatePicker ? (
+            <DateTimePicker
+              testID="pipeline-native-date-picker"
+              mode="date"
+              value={draftSubmittedDate ?? new Date()}
+              onChange={(event: { type?: string }, nextValue?: Date) => {
+                if (event?.type === "dismissed" || !nextValue) {
+                  return
+                }
+
+                setDraftSubmittedDate(nextValue)
+                setDraftDatePreset("pick_date")
+              }}
+            />
+          ) : null}
+        </View>
+
+        <View style={styles.sheetActions}>
+          <ActionButton
+            label="Clear filters"
+            tone="secondary"
+            icon="x"
+            onPress={clearFilters}
+            testID="pipeline-filter-clear"
+          />
+          <ActionButton
+            label="Apply filters"
+            icon="check"
+            onPress={applyFilters}
+            testID="pipeline-filter-apply"
+          />
         </View>
       </BottomSheet>
 
@@ -458,26 +646,21 @@ export default function PipelineScreen() {
             <InlineMessage
               tone="warning"
               title="Current stage"
-              message={(getPipelineDisplayStage(selectedLead) ?? selectedLead.pipelineStage).replaceAll("_", " ")}
+              message={stageLabel(selectedLead.pipelineStage)}
             />
             <View style={styles.sheetActions}>
-              {MOVE_STAGES.map((stage) => {
-                const currentStage = getPipelineDisplayStage(selectedLead) ?? selectedLead.pipelineStage
-
-                return (
-                  <ActionButton
-                    key={stage}
-                    label={stage.replaceAll("_", " ")}
-                    tone={stage === currentStage ? "primary" : "secondary"}
-                    onPress={() => {
-                      void moveLead(selectedLead.id, stage)
-                      setSelectedLead(null)
-                    }}
-                    disabled={busyLeadId === selectedLead.id}
-                    testID={`pipeline-move-${selectedLead.id}-${stage}`}
-                  />
-                )
-              })}
+              {MOVE_STAGES.map((stage) => (
+                <ActionButton
+                  key={stage}
+                  label={stageLabel(stage)}
+                  tone={stage === selectedLead.pipelineStage ? "primary" : "secondary"}
+                  onPress={() => {
+                    void moveLead(selectedLead.id, stage)
+                  }}
+                  disabled={busyLeadId === selectedLead.id}
+                  testID={`pipeline-move-${selectedLead.id}-${stage}`}
+                />
+              ))}
             </View>
           </>
         ) : null}
@@ -486,7 +669,50 @@ export default function PipelineScreen() {
   )
 }
 
+function FilterChoice({
+  label,
+  selected,
+  onPress,
+  testID
+}: {
+  label: string
+  selected: boolean
+  onPress: () => void
+  testID: string
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      testID={testID}
+      style={({ pressed }) => [
+        styles.filterChoice,
+        selected ? styles.filterChoiceSelected : null,
+        pressed ? styles.pressed : null
+      ]}
+    >
+      <Text style={[styles.filterChoiceText, selected ? styles.filterChoiceTextSelected : null]}>
+        {label}
+      </Text>
+    </Pressable>
+  )
+}
+
 const styles = StyleSheet.create({
+  screenContent: {
+    flex: 1
+  },
+  listContent: {
+    paddingBottom: 132
+  },
+  listHeader: {
+    gap: 16,
+    paddingBottom: 16
+  },
+  listSeparator: {
+    height: 14
+  },
   filtersCard: {
     gap: 14
   },
@@ -495,6 +721,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12
+  },
+  filterHeaderCopy: {
+    flex: 1,
+    gap: 4
+  },
+  summaryLabel: {
+    fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
+    fontWeight: "800",
+    color: mobileTheme.colors.ink
   },
   resultsPill: {
     minWidth: 68,
@@ -556,7 +792,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
-  categoryPicker: {
+  filterButton: {
     minHeight: 64,
     borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
@@ -569,33 +805,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12
   },
-  categoryPickerCopy: {
+  filterButtonCopy: {
     flex: 1,
     gap: 4
   },
-  categoryPickerValue: {
+  filterValue: {
     fontSize: mobileTheme.typography.body,
+    lineHeight: 22,
     fontWeight: "800",
     color: mobileTheme.colors.ink
-  },
-  categoryPickerMeta: {
-    alignItems: "center",
-    gap: 8
-  },
-  categoryPickerCount: {
-    minWidth: 34,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    overflow: "hidden",
-    textAlign: "center",
-    backgroundColor: mobileTheme.colors.surfaceMuted,
-    color: mobileTheme.colors.mutedInk,
-    fontSize: 12,
-    fontWeight: "700"
-  },
-  leadList: {
-    gap: 14
   },
   card: {
     gap: 16
@@ -621,6 +839,24 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: mobileTheme.colors.mutedInk
   },
+  attentionRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+    borderRadius: mobileTheme.radii.control,
+    backgroundColor: mobileTheme.colors.surfaceTint,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  attentionText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: mobileTheme.colors.brandStrong
+  },
   summary: {
     fontSize: mobileTheme.typography.body,
     lineHeight: 22,
@@ -629,59 +865,60 @@ const styles = StyleSheet.create({
   primaryActions: {
     gap: 10
   },
-  categoryOptions: {
-    gap: 10
+  footer: {
+    gap: 10,
+    paddingTop: 16,
+    paddingBottom: 24
   },
-  categoryOption: {
-    minHeight: 76,
+  footerHint: {
+    textAlign: "center",
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 21,
+    color: mobileTheme.colors.mutedInk
+  },
+  sheetSection: {
+    gap: 10,
+    paddingBottom: 4
+  },
+  sheetLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0,
+    color: mobileTheme.colors.brandStrong
+  },
+  optionGrid: {
+    gap: 8
+  },
+  filterChoice: {
+    minHeight: 48,
     borderRadius: mobileTheme.radii.control,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
     backgroundColor: mobileTheme.colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10
   },
-  categoryOptionSelected: {
-    backgroundColor: mobileTheme.colors.surfaceTint,
-    borderColor: mobileTheme.colors.borderStrong
+  filterChoiceSelected: {
+    backgroundColor: mobileTheme.colors.brand,
+    borderColor: mobileTheme.colors.brand
   },
-  categoryOptionCopy: {
-    flex: 1,
-    gap: 4
-  },
-  categoryOptionTitle: {
-    fontSize: mobileTheme.typography.body,
+  filterChoiceText: {
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: "800",
-    color: mobileTheme.colors.ink
+    color: mobileTheme.colors.ink,
+    textAlign: "center"
   },
-  categoryOptionTitleSelected: {
-    color: mobileTheme.colors.brandStrong
-  },
-  categoryOptionMeta: {
-    alignItems: "center",
-    gap: 8
-  },
-  categoryOptionCount: {
-    minWidth: 36,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    overflow: "hidden",
-    textAlign: "center",
-    backgroundColor: mobileTheme.colors.surfaceMuted,
-    color: mobileTheme.colors.mutedInk,
-    fontSize: 12,
-    fontWeight: "800"
+  filterChoiceTextSelected: {
+    color: mobileTheme.colors.inverse
   },
   sheetActions: {
     gap: 10
   },
   pressed: {
-    opacity: 0.94,
-    transform: [{ scale: 0.99 }]
+    opacity: 0.88
   }
 })

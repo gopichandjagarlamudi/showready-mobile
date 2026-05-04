@@ -119,6 +119,7 @@ export function buildWebCssVariables() {
       --sr-bone-raised: ${showReadyTokens.colors.boneRaised};
       --sr-ink: ${showReadyTokens.colors.ink};
       --sr-ink-muted: ${showReadyTokens.colors.inkMuted};
+      --sr-ink-soft: ${showReadyTokens.colors.inkSoft};
       --sr-cypress: ${showReadyTokens.colors.cypress};
       --sr-cypress-soft: ${showReadyTokens.colors.cypressSoft};
       --sr-amber-red: ${showReadyTokens.colors.amberRed};

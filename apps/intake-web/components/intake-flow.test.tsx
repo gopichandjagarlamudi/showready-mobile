@@ -22,6 +22,13 @@ const rentalTemplate = {
   customQuestions: []
 }
 
+const branding = {
+  realtorName: "Taylor Agent",
+  brandLine: "Northline Realty",
+  brandColor: "#24533f",
+  accentColor: "#c45f2c"
+}
+
 async function advanceUntilQuestion(label: string) {
   for (let index = 0; index < 25; index += 1) {
     await waitFor(() => {
@@ -109,10 +116,52 @@ describe("IntakeFlow", () => {
     vi.unstubAllGlobals()
   })
 
+  it("renders realtor-first branding and the ShowReady powered-by mark", () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        branding={branding}
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    expect(screen.getByText("Presented by Taylor Agent")).toBeTruthy()
+    expect(screen.getByText("Northline Realty")).toBeTruthy()
+    expect(screen.getByText("Powered by ShowReady")).toBeTruthy()
+    expect(screen.getByAltText("ShowReady")).toBeTruthy()
+  })
+
+  it("omits the brand line when realtor brokerage or team brand is missing", () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        branding={{
+          realtorName: "Taylor Agent",
+          brandColor: "#24533f",
+          accentColor: "#c45f2c"
+        }}
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    expect(screen.getByText("Presented by Taylor Agent")).toBeTruthy()
+    expect(screen.queryByText("Northline Realty")).toBeNull()
+    expect(screen.getByText("Powered by ShowReady")).toBeTruthy()
+  })
+
   it("requires an email or phone before advancing past contact details", async () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={saleTemplate}
         rentalTemplate={rentalTemplate}
@@ -146,10 +195,27 @@ describe("IntakeFlow", () => {
     ).toBeTruthy()
   })
 
+  it("does not call public intake APIs on initial render", () => {
+    render(
+      <IntakeFlow
+        token="invite-token"
+        branding={branding}
+        draft={{ contact: { fullName: "" } }}
+        saleTemplate={saleTemplate}
+        rentalTemplate={rentalTemplate}
+        requiredQuestions={[]}
+        optionalQuestions={[]}
+      />
+    )
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it("expands to the intent-specific questions before submission", async () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={saleTemplate}
         rentalTemplate={rentalTemplate}
@@ -189,7 +255,8 @@ describe("IntakeFlow", () => {
       expect(fetchMock).toHaveBeenLastCalledWith(
         "/api/intake/invite-token/autosave",
         expect.objectContaining({
-          method: "POST"
+          method: "POST",
+          body: expect.stringContaining("\"guard\"")
         })
       )
     })
@@ -207,6 +274,7 @@ describe("IntakeFlow", () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={{
           ...saleTemplate,
@@ -275,6 +343,7 @@ describe("IntakeFlow", () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={saleTemplate}
         rentalTemplate={rentalTemplate}
@@ -300,6 +369,7 @@ describe("IntakeFlow", () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={saleTemplate}
         rentalTemplate={rentalTemplate}
@@ -329,6 +399,7 @@ describe("IntakeFlow", () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={saleTemplate}
         rentalTemplate={rentalTemplate}
@@ -374,6 +445,7 @@ describe("IntakeFlow", () => {
     render(
       <IntakeFlow
         token="invite-token"
+        branding={branding}
         draft={{ contact: { fullName: "" } }}
         saleTemplate={{
           ...saleTemplate,

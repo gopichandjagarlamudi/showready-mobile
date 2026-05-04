@@ -1,39 +1,62 @@
 import { NextResponse } from "next/server"
 import { saveAppointment } from "@showready/application"
-import { AppointmentMutationSchema } from "@showready/contracts"
+import { AppointmentListQuerySchema, AppointmentMutationSchema } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
+import { requestErrorResponse } from "@/lib/observability"
+import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { createAppointment, listAppointments, updateAppointment } from "@/lib/supabase/data"
 
 export async function GET(request: Request) {
-  try {
-    const { agentId, client } = await requireMobileAgent(request)
-    const { searchParams } = new URL(request.url)
-    const status =
-      searchParams.get("status") === "completed" || searchParams.get("status") === "cancelled"
-        ? (searchParams.get("status") as "completed" | "cancelled")
-        : "scheduled"
-    const appointments = await listAppointments(client, agentId, status)
+  let agentId: string | undefined
 
-    return NextResponse.json({ appointments })
+  try {
+    const auth = await requireMobileAgent(request)
+    agentId = auth.agentId
+    const { searchParams } = new URL(request.url)
+    const query = AppointmentListQuerySchema.parse(
+      Object.fromEntries(searchParams.entries())
+    )
+    const result = await listAppointments(auth.client, agentId, query)
+
+    return NextResponse.json(result)
   } catch (error) {
     if (error instanceof MobileAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return requestErrorResponse({
+        request,
+        error,
+        route: "api.mobile.appointments",
+        status: error.status,
+        response: { error: error.message },
+        headers: error.headers
+      })
     }
 
-    return NextResponse.json({ error: "Unable to load appointments." }, { status: 400 })
+    return requestErrorResponse({
+      request,
+      error,
+      route: "api.mobile.appointments",
+      status: 400,
+      agentId,
+      response: { error: "Unable to load appointments." }
+    })
   }
 }
 
 export async function POST(request: Request) {
+  let agentId: string | undefined
+
   try {
-    const { agentId, client } = await requireMobileAgent(request)
+    const auth = await requireMobileAgent(request)
+    agentId = auth.agentId
+    const authenticatedAgentId = auth.agentId
+    const serviceClient = createSupabaseAdminClient()
     const payload = AppointmentMutationSchema.parse(await request.json())
     const appointment = await saveAppointment(
       {
         saveAppointment: (input) =>
           payload.appointmentId
-            ? updateAppointment(client, agentId, payload.appointmentId as string, input)
-            : createAppointment(client, agentId, input)
+            ? updateAppointment(serviceClient, authenticatedAgentId, payload.appointmentId as string, input)
+            : createAppointment(serviceClient, authenticatedAgentId, input)
       },
       payload
     )
@@ -44,9 +67,23 @@ export async function POST(request: Request) {
     )
   } catch (error) {
     if (error instanceof MobileAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return requestErrorResponse({
+        request,
+        error,
+        route: "api.mobile.appointments",
+        status: error.status,
+        response: { error: error.message },
+        headers: error.headers
+      })
     }
 
-    return NextResponse.json({ error: "Unable to save appointment." }, { status: 400 })
+    return requestErrorResponse({
+      request,
+      error,
+      route: "api.mobile.appointments",
+      status: 400,
+      agentId,
+      response: { error: "Unable to save appointment." }
+    })
   }
 }

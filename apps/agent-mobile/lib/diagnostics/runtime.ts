@@ -9,7 +9,11 @@ import type {
   DiagnosticsPlatform,
   DiagnosticsSeverity
 } from "@showready/contracts"
-import { sanitizeDiagnosticsMetadata } from "./redaction"
+import {
+  sanitizeDiagnosticsMetadata,
+  sanitizeDiagnosticsPath,
+  sanitizeDiagnosticsText
+} from "./redaction"
 import type { DiagnosticsStore } from "./store"
 
 type DiagnosticsTransport = {
@@ -53,12 +57,28 @@ type DiagnosticsRuntimeOptions = {
 
 const DEFAULT_BATCH_SIZE = 20
 
+function createFallbackUuid() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (part) => {
+    const randomValue = Math.floor(Math.random() * 16)
+    const value = part === "x" ? randomValue : (randomValue & 0x3) | 0x8
+    return value.toString(16)
+  })
+}
+
 function createRandomId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID()
   }
 
-  return `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return createFallbackUuid()
+}
+
+function normalizeHttpStatus(status: number | undefined) {
+  if (typeof status !== "number" || status < 100 || status > 599) {
+    return undefined
+  }
+
+  return status
 }
 
 export function createDiagnosticsRuntime({
@@ -114,14 +134,14 @@ export function createDiagnosticsRuntime({
       eventType: input.eventType,
       category: input.category,
       severity: input.severity,
-      message: input.message,
-      fingerprint: input.fingerprint,
-      screen: input.screen,
+      message: sanitizeDiagnosticsText(input.message),
+      fingerprint: input.fingerprint ? sanitizeDiagnosticsText(input.fingerprint, 256) : undefined,
+      screen: input.screen ? sanitizeDiagnosticsPath(input.screen) : undefined,
       appVersion,
       buildNumber,
       platform,
-      requestPath: input.requestPath,
-      httpStatus: input.httpStatus,
+      requestPath: input.requestPath ? sanitizeDiagnosticsPath(input.requestPath) : undefined,
+      httpStatus: normalizeHttpStatus(input.httpStatus),
       leadId: input.leadId,
       appointmentId: input.appointmentId,
       pipelineStage: input.pipelineStage,

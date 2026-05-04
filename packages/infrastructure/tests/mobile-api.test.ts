@@ -3,6 +3,211 @@ import { createMobileApiClient } from "../src/mobile-api"
 import { MobileApiError } from "../src/errors"
 
 describe("createMobileApiClient", () => {
+  it("submits authenticated feedback", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 201,
+        headers: {
+          "content-type": "application/json"
+        }
+      })
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    await expect(client.submitFeedback({ message: "Please add calendar sync." })).resolves.toEqual({
+      ok: true
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/feedback",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+        body: JSON.stringify({ message: "Please add calendar sync." })
+      })
+    )
+
+    const firstFetchCall = fetcher.mock.calls[0] as unknown as [string, RequestInit] | undefined
+    const headers = firstFetchCall?.[1].headers as Headers
+    expect(headers.get("Authorization")).toBe("Bearer token-123")
+    expect(headers.get("Content-Type")).toBe("application/json")
+  })
+
+  it("submits authenticated product event batches", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          acceptedCount: 1,
+          rejectedCount: 0,
+          rejectedEventIds: []
+        }),
+        {
+          status: 202,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      )
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    const payload = {
+      events: [
+        {
+          id: "1d0bd5f6-51bd-4d65-a046-608c209f6c92",
+          occurredAt: "2026-04-29T12:00:00.000Z",
+          eventName: "lead.stage_changed" as const,
+          platform: "ios" as const,
+          resourceType: "lead",
+          resourceId: "lead-1",
+          properties: {
+            fromStage: "new",
+            toStage: "nurture"
+          }
+        }
+      ]
+    }
+
+    await expect(client.submitProductEvents(payload)).resolves.toEqual({
+      acceptedCount: 1,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/events",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+        body: JSON.stringify(payload)
+      })
+    )
+  })
+
+  it("submits authenticated audit event batches", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          acceptedCount: 1,
+          rejectedCount: 0,
+          rejectedEventIds: []
+        }),
+        {
+          status: 202,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      )
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    const payload = {
+      events: [
+        {
+          id: "ab831397-3813-44ca-8495-0e778f8a1aa0",
+          occurredAt: "2026-04-29T12:00:00.000Z",
+          action: "lead.score_overridden" as const,
+          actorType: "agent" as const,
+          resourceType: "lead",
+          resourceId: "lead-1",
+          beforeSummary: {
+            scoreBand: "medium"
+          },
+          afterSummary: {
+            scoreBand: "high"
+          },
+          metadata: {}
+        }
+      ]
+    }
+
+    await expect(client.submitAuditEvents(payload)).resolves.toEqual({
+      acceptedCount: 1,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/audit-events",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+        body: JSON.stringify(payload)
+      })
+    )
+  })
+
+  it("submits authenticated consent record batches", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          acceptedCount: 1,
+          rejectedCount: 0,
+          rejectedEventIds: []
+        }),
+        {
+          status: 202,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      )
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    const payload = {
+      records: [
+        {
+          id: "61ae65c3-f103-45c6-9a42-a9f5e1785b2f",
+          subjectType: "agent" as const,
+          consentType: "push_notifications" as const,
+          status: "granted" as const,
+          source: "mobile-session-provider",
+          occurredAt: "2026-04-29T12:00:00.000Z",
+          metadata: {
+            permissionStatus: "granted"
+          }
+        }
+      ]
+    }
+
+    await expect(client.submitConsentRecords(payload)).resolves.toEqual({
+      acceptedCount: 1,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/consent-records",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+        body: JSON.stringify(payload)
+      })
+    )
+  })
+
   it("submits authenticated diagnostics batches", async () => {
     const fetcher = vi.fn(async () =>
       new Response(
@@ -85,5 +290,329 @@ describe("createMobileApiClient", () => {
       status: 500,
       message: "Unable to load dashboard summary."
     })
+  })
+
+  it("reports mobile telemetry API failures through onRequestError before throwing", async () => {
+    const onRequestError = vi.fn()
+    const fetcher = vi.fn(async () => new Response(null, { status: 503 }))
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher,
+      onRequestError
+    })
+
+    await expect(client.submitProductEvents({} as never)).rejects.toMatchObject({
+      status: 503,
+      message: "Unable to submit product events."
+    })
+    await expect(client.submitAuditEvents({} as never)).rejects.toMatchObject({
+      status: 503,
+      message: "Unable to submit audit events."
+    })
+    await expect(client.submitConsentRecords({} as never)).rejects.toMatchObject({
+      status: 503,
+      message: "Unable to submit consent records."
+    })
+
+    expect(onRequestError.mock.calls).toEqual([
+      [
+        {
+          path: "/api/mobile/events",
+          method: "POST",
+          status: 503,
+          message: "Unable to submit product events."
+        }
+      ],
+      [
+        {
+          path: "/api/mobile/audit-events",
+          method: "POST",
+          status: 503,
+          message: "Unable to submit audit events."
+        }
+      ],
+      [
+        {
+          path: "/api/mobile/consent-records",
+          method: "POST",
+          status: 503,
+          message: "Unable to submit consent records."
+        }
+      ]
+    ])
+  })
+
+  it("wraps successful response parse failures before they reach mobile screens", async () => {
+    const onRequestError = vi.fn()
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          appointments: [
+            {
+              id: "appointment-1",
+              leadId: "lead-1",
+              date: "2026-05-04",
+              startTime: "12:00:00",
+              status: "scheduled",
+              createdAt: "2026-05-04T14:00:00.000Z",
+              lead: {
+                id: "lead-1",
+                buyerName: "Taylor Client",
+                pipelineStage: "ready_to_show"
+              },
+              showings: []
+            }
+          ],
+          total: 1
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      )
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher,
+      onRequestError
+    })
+
+    await expect(client.listAppointments("scheduled")).rejects.toMatchObject({
+      status: 200,
+      message: "Unable to load appointments."
+    })
+    expect(onRequestError).toHaveBeenCalledWith({
+      path: "/api/mobile/appointments?status=scheduled&limit=25&offset=0",
+      method: "GET",
+      status: 200,
+      message: "Unable to load appointments."
+    })
+  })
+
+  it("wraps network request failures before they reach mobile screens", async () => {
+    const onRequestError = vi.fn()
+    const fetcher = vi.fn(async () => {
+      throw new TypeError("Network request failed")
+    })
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher,
+      onRequestError
+    })
+
+    await expect(
+      client.listPipelineLeads({
+        tab: "active"
+      })
+    ).rejects.toMatchObject({
+      status: 0,
+      message: "Unable to load pipeline leads."
+    })
+    expect(onRequestError).toHaveBeenCalledWith({
+      path: "/api/mobile/pipeline/leads?tab=active&category=all&limit=25&offset=0",
+      method: "GET",
+      status: 0,
+      message: "Unable to load pipeline leads."
+    })
+  })
+
+  it("records authenticated lead contact interactions", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          interaction: {
+            id: "interaction-1",
+            leadId: "lead-1",
+            agentId: "agent-1",
+            method: "text",
+            occurredAt: "2026-05-03T15:30:00.000Z"
+          }
+        }),
+        {
+          status: 201,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      )
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    await expect(client.recordLeadContactInteraction("lead-1", "text")).resolves.toEqual({
+      interaction: {
+        id: "interaction-1",
+        leadId: "lead-1",
+        agentId: "agent-1",
+        method: "text",
+        occurredAt: "2026-05-03T15:30:00.000Z"
+      }
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/leads/lead-1/contact-interactions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+        body: JSON.stringify({ method: "text" })
+      })
+    )
+  })
+
+  it("serializes pipeline lead filters and parses paginated responses", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          leads: [
+            {
+              id: "lead-1",
+              agentId: "agent-1",
+              intakeType: "sale",
+              buyerName: "Riley Ready",
+              buyerEmail: "riley@example.com",
+              status: "submitted",
+              pipelineStage: "ready_to_show",
+              submittedAt: "2026-04-22T12:00:00.000Z",
+              score: 8.4,
+              recommendation: "show",
+              summary: "Ready to tour.",
+              createdAt: "2026-04-22T12:00:00.000Z",
+              updatedAt: "2026-04-22T12:00:00.000Z",
+              lastMovementAt: "2026-04-22T12:00:00.000Z",
+              attentionReason: "Ready to show with no appointment scheduled."
+            }
+          ],
+          total: 26,
+          nextOffset: 25,
+          mode: "filtered_results",
+          summaryLabel: "Submitted Apr 22 · 1 shown"
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      )
+    )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    await expect(
+      client.listPipelineLeads({
+        tab: "active",
+        category: "nurture",
+        query: "Riley Ready",
+        submittedFrom: "2026-04-22T04:00:00.000Z",
+        submittedTo: "2026-04-23T04:00:00.000Z",
+        limit: 25,
+        offset: 0
+      })
+    ).resolves.toMatchObject({
+      total: 26,
+      nextOffset: 25,
+      leads: [
+        {
+          id: "lead-1",
+          attentionReason: "Ready to show with no appointment scheduled."
+        }
+      ]
+    })
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com/api/mobile/pipeline/leads?tab=active&category=nurture&query=Riley+Ready&submittedFrom=2026-04-22T04%3A00%3A00.000Z&submittedTo=2026-04-23T04%3A00%3A00.000Z&limit=25&offset=0",
+      expect.any(Object)
+    )
+  })
+
+  it("serializes paginated mobile lead and appointment list requests", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            leads: [],
+            total: 124,
+            nextOffset: 10
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            appointments: [],
+            total: 9,
+            nextOffset: 25
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+      )
+
+    const client = createMobileApiClient({
+      supabase: {} as never,
+      apiBaseUrl: "https://example.com",
+      getAccessToken: async () => "token-123",
+      fetcher
+    })
+
+    await expect(
+      client.listLeads({
+        scope: "appointment_eligible",
+        query: "Riley",
+        limit: 10,
+        offset: 0
+      })
+    ).resolves.toEqual({
+      leads: [],
+      total: 124,
+      nextOffset: 10
+    })
+    await expect(client.listAppointments({ status: "scheduled", limit: 25, offset: 0 })).resolves.toEqual({
+      appointments: [],
+      total: 9,
+      nextOffset: 25
+    })
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/mobile/leads?scope=appointment_eligible&query=Riley&limit=10&offset=0",
+      expect.any(Object)
+    )
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/mobile/appointments?status=scheduled&limit=25&offset=0",
+      expect.any(Object)
+    )
   })
 })

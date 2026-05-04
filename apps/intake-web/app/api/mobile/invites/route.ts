@@ -2,15 +2,20 @@ import { NextResponse } from "next/server"
 import { createInviteLink } from "@showready/application"
 import { serializeInviteResponse } from "@/lib/invite-response"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
+import { requestErrorResponse } from "@/lib/observability"
 import { createInvite } from "@/lib/supabase/data"
 import { buildAppUrl } from "@/lib/utils"
 
 export async function POST(request: Request) {
+  let agentId: string | undefined
+
   try {
-    const { agentId, client } = await requireMobileAgent(request)
+    const auth = await requireMobileAgent(request)
+    agentId = auth.agentId
+    const authenticatedAgentId = auth.agentId
     const payload = await createInviteLink({
       createInvite: async () => {
-        const invite = await createInvite(client, agentId)
+        const invite = await createInvite(auth.client, authenticatedAgentId)
 
         return serializeInviteResponse({
           token: invite.token,
@@ -25,9 +30,23 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     if (error instanceof MobileAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return requestErrorResponse({
+        request,
+        error,
+        route: "api.mobile.invites",
+        status: error.status,
+        response: { error: error.message },
+        headers: error.headers
+      })
     }
 
-    return NextResponse.json({ error: "Unable to create invite." }, { status: 400 })
+    return requestErrorResponse({
+      request,
+      error,
+      route: "api.mobile.invites",
+      status: 400,
+      agentId,
+      response: { error: "Unable to create invite." }
+    })
   }
 }

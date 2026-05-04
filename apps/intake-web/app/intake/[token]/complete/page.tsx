@@ -1,44 +1,35 @@
-export default function IntakeCompletePage() {
+import {
+  IntakeCompletionMessage,
+  IntakeStatusPage
+} from "@/components/intake-branding"
+import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import { getPublicLeadIntakeContext } from "@/lib/supabase/data"
+import type { PublicIntakeBranding } from "@/lib/public-intake-branding"
+
+async function getCompletionBranding(token: string): Promise<PublicIntakeBranding> {
+  try {
+    const context = await getPublicLeadIntakeContext(createSupabaseAdminClient(), token)
+    return context?.branding ?? {}
+  } catch {
+    return {}
+  }
+}
+
+export default async function IntakeCompletePage({
+  params
+}: {
+  params: Promise<{ token: string }>
+}) {
+  const { token } = await params
+  const branding = await getCompletionBranding(token)
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        background:
-          "radial-gradient(circle at top left, rgba(31,95,87,0.12), transparent 22%), linear-gradient(180deg, var(--sr-bone-raised), var(--sr-bone))"
-      }}
+    <IntakeStatusPage
+      branding={branding}
+      eyebrow="Submission received"
+      title="You’re officially in the queue."
     >
-      <section
-        style={{
-          maxWidth: 560,
-          background: "var(--sr-bone-raised)",
-          border: "1px solid var(--sr-border)",
-          borderRadius: 32,
-          padding: 36,
-          boxShadow: "var(--sr-shadow-soft)"
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            textTransform: "uppercase",
-            letterSpacing: "0.14em",
-            fontSize: 12,
-            color: "var(--sr-cypress)"
-          }}
-        >
-          Submission received
-        </p>
-        <h1 style={{ fontFamily: "var(--sr-font-display)", fontSize: "3rem", lineHeight: 1 }}>
-          You’re officially in the queue.
-        </h1>
-        <p style={{ color: "var(--sr-ink-muted)", lineHeight: 1.6 }}>
-          Your agent now has the information they need to review your readiness,
-          score the next best move, and follow up with a tailored plan.
-        </p>
-      </section>
-    </main>
+      <IntakeCompletionMessage branding={branding} />
+    </IntakeStatusPage>
   )
 }

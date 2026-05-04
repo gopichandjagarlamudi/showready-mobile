@@ -42,3 +42,37 @@ If you still need the old Expo Go sandbox for non-auth UI checks, use:
 ```bash
 corepack pnpm --filter @showready/agent-mobile dev:go
 ```
+
+## Production rollout
+
+Before deploying the scale-hardening changes, apply the SQL files in `apps/intake-web/lib/supabase/sql` to staging and then production, including `2026-05-01-scale-hardening.sql`.
+
+Required production env:
+
+```bash
+NEXT_PUBLIC_APP_URL=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+CRON_SECRET=
+RATE_LIMIT_STORE=supabase
+EXPO_PUBLIC_SUPABASE_URL=
+EXPO_PUBLIC_SUPABASE_ANON_KEY=
+EXPO_PUBLIC_API_BASE_URL=
+```
+
+The guarded job endpoints are:
+
+- `/api/jobs/outbox`: drains up to 10 pending outbox jobs per run.
+- `/api/jobs/retention`: deletes one bounded retention batch per high-volume table.
+
+Both accept Vercel Cron `GET` requests with `Authorization: Bearer $CRON_SECRET`; manual runs can also use `POST` with that header or `x-job-token: $JOB_PROCESSOR_TOKEN`.
+
+Run these checks before rollout:
+
+```bash
+corepack pnpm typecheck
+corepack pnpm lint
+corepack pnpm test
+corepack pnpm build
+```

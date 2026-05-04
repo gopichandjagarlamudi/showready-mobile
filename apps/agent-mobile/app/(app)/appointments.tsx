@@ -12,6 +12,7 @@ import { InlineMessage } from "@/components/ui/inline-message"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { SurfaceCard } from "@/components/ui/surface-card"
 import { StageChip } from "@/components/ui/stage-chip"
+import { captureDiagnosticsError } from "@/lib/diagnostics/service"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
@@ -66,8 +67,14 @@ function matchesLeadSearch(lead: Lead, query: string) {
     .includes(query)
 }
 
-function getLeadRecency(lead: Lead) {
-  return lead.updatedAt ?? lead.createdAt ?? lead.submittedAt ?? ""
+function reportAppointmentsError(error: unknown, context: Record<string, string>) {
+  void captureDiagnosticsError(error, {
+    eventType: "error.handled",
+    category: "api",
+    severity: "error",
+    screen: "appointments",
+    context
+  }).catch(() => {})
 }
 
 export default function AppointmentsScreen() {
@@ -75,6 +82,8 @@ export default function AppointmentsScreen() {
   const api = useMobileApi()
   const [status, setStatus] = useState<AppointmentStatusFilter>("scheduled")
   const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [appointmentNextOffset, setAppointmentNextOffset] = useState<number | undefined>()
+  const [isLoadingMoreAppointments, setIsLoadingMoreAppointments] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
   const [leadSearchQuery, setLeadSearchQuery] = useState("")
   const deferredLeadSearchQuery = useDeferredValue(leadSearchQuery.trim().toLowerCase())
@@ -100,14 +109,16 @@ export default function AppointmentsScreen() {
   )
   const leadSearchIsActive = leadSearchQuery.trim().length > 0
   const filteredEligibleLeads = useMemo(
-    () => eligibleLeads.filter((lead) => matchesLeadSearch(lead, deferredLeadSearchQuery)),
+    () =>
+      eligibleLeads
+        .filter((lead) => matchesLeadSearch(lead, deferredLeadSearchQuery))
+        .slice(0, 10),
     [deferredLeadSearchQuery, eligibleLeads]
   )
   const suggestedReadyLeads = useMemo(
     () =>
       eligibleLeads
         .filter((lead) => lead.pipelineStage === "ready_to_show")
-        .sort((left, right) => getLeadRecency(right).localeCompare(getLeadRecency(left)))
         .slice(0, 3),
     [eligibleLeads]
   )
@@ -119,18 +130,23 @@ export default function AppointmentsScreen() {
     }
 
     try {
-      const [appointmentRows, leadRows] = await Promise.all([
-        api.listAppointments(nextStatus),
-        api.listLeads(session.user.id)
+      const [appointmentPage, leadPage] = await Promise.all([
+        api.listAppointments({ status: nextStatus, limit: 25, offset: 0 }),
+        api.listLeads({ scope: "appointment_eligible", limit: 3, offset: 0 })
       ])
-      setAppointments(appointmentRows)
-      setLeads(leadRows)
+      setAppointments(appointmentPage.appointments)
+      setAppointmentNextOffset(appointmentPage.nextOffset)
+      setLeads(leadPage.leads)
       setLoadState("ready")
     } catch (error) {
+      reportAppointmentsError(error, {
+        action: "load-appointments",
+        status: nextStatus
+      })
       setMessage({
         tone: "error",
         title: "Unable to load appointments",
-        message: error instanceof Error ? error.message : "Try again."
+        message: "Try again once the workspace reconnects."
       })
       setLoadState("error")
     }
@@ -139,6 +155,75 @@ export default function AppointmentsScreen() {
   useEffect(() => {
     void loadData(status)
   }, [session, status, workspaceVersion])
+
+  useEffect(() => {
+    if (!isScheduleSheetOpen) {
+      return
+    }
+
+    let isMounted = true
+    const query = deferredLeadSearchQuery
+
+    api
+      .listLeads({
+        scope: "appointment_eligible",
+        query: query || undefined,
+        limit: query ? 10 : 3,
+        offset: 0
+      })
+      .then((page) => {
+        if (isMounted) {
+          setLeads(page.leads)
+        }
+      })
+      .catch((error) => {
+        if (isMounted) {
+          reportAppointmentsError(error, {
+            action: "search-appointment-leads",
+            query: query ? "present" : "empty"
+          })
+          setMessage({
+            tone: "error",
+            title: "Unable to search leads",
+            message: "Try again once the workspace reconnects."
+          })
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [api, deferredLeadSearchQuery, isScheduleSheetOpen])
+
+  async function handleLoadMoreAppointments() {
+    if (appointmentNextOffset === undefined || isLoadingMoreAppointments) {
+      return
+    }
+
+    setIsLoadingMoreAppointments(true)
+
+    try {
+      const page = await api.listAppointments({
+        status,
+        limit: 25,
+        offset: appointmentNextOffset
+      })
+      setAppointments((current) => current.concat(page.appointments))
+      setAppointmentNextOffset(page.nextOffset)
+    } catch (error) {
+      reportAppointmentsError(error, {
+        action: "load-more-appointments",
+        status
+      })
+      setMessage({
+        tone: "error",
+        title: "Unable to load more appointments",
+        message: "Try again once the workspace reconnects."
+      })
+    } finally {
+      setIsLoadingMoreAppointments(false)
+    }
+  }
 
   async function handleSave() {
     if (!selectedLeadId || !selectedDate || !selectedTime || !showingAddress.trim()) {
@@ -279,55 +364,68 @@ export default function AppointmentsScreen() {
           icon="calendar"
         />
       ) : (
-        appointments.map((appointment) => (
-          <SurfaceCard key={appointment.id} style={styles.card} testID={`appointment-card-${appointment.id}`}>
-            <View style={styles.appointmentHeader}>
-              <View style={styles.headerMeta}>
-                <Text style={styles.name}>{appointment.lead.buyerName}</Text>
-                <Text style={styles.meta}>
-                  {appointment.date} at {appointment.startTime}
-                </Text>
-              </View>
-              <StageChip stage={appointment.lead.pipelineStage} />
-            </View>
-
-            {appointment.notes ? <Text style={styles.meta}>{appointment.notes}</Text> : null}
-
-            <View style={styles.showings}>
-              {appointment.showings.map((showing, index) => (
-                <View key={showing.id} style={styles.showingRow}>
-                  <Text style={styles.showingIndex}>Stop {index + 1}</Text>
-                  <Text style={styles.showingAddress}>{showing.address}</Text>
-                  {showing.notes ? <Text style={styles.meta}>{showing.notes}</Text> : null}
+        <>
+          {appointments.map((appointment) => (
+            <SurfaceCard key={appointment.id} style={styles.card} testID={`appointment-card-${appointment.id}`}>
+              <View style={styles.appointmentHeader}>
+                <View style={styles.headerMeta}>
+                  <Text style={styles.name}>{appointment.lead.buyerName}</Text>
+                  <Text style={styles.meta}>
+                    {appointment.date} at {appointment.startTime}
+                  </Text>
                 </View>
-              ))}
-            </View>
-
-            {status === "scheduled" ? (
-              <View style={styles.actionRow}>
-                <ActionButton
-                  label="Mark complete"
-                  icon="check"
-                  onPress={() => {
-                    void handleStatusChange(appointment.id, "completed")
-                  }}
-                  disabled={busyAppointmentId === appointment.id}
-                  testID={`appointment-complete-${appointment.id}`}
-                />
-                <ActionButton
-                  label="Cancel"
-                  icon="x"
-                  tone="danger"
-                  onPress={() => {
-                    void handleStatusChange(appointment.id, "cancelled")
-                  }}
-                  disabled={busyAppointmentId === appointment.id}
-                  testID={`appointment-cancel-${appointment.id}`}
-                />
+                <StageChip stage={appointment.lead.pipelineStage} />
               </View>
-            ) : null}
-          </SurfaceCard>
-        ))
+
+              {appointment.notes ? <Text style={styles.meta}>{appointment.notes}</Text> : null}
+
+              <View style={styles.showings}>
+                {appointment.showings.map((showing, index) => (
+                  <View key={showing.id} style={styles.showingRow}>
+                    <Text style={styles.showingIndex}>Stop {index + 1}</Text>
+                    <Text style={styles.showingAddress}>{showing.address}</Text>
+                    {showing.notes ? <Text style={styles.meta}>{showing.notes}</Text> : null}
+                  </View>
+                ))}
+              </View>
+
+              {status === "scheduled" ? (
+                <View style={styles.actionRow}>
+                  <ActionButton
+                    label="Mark complete"
+                    icon="check"
+                    onPress={() => {
+                      void handleStatusChange(appointment.id, "completed")
+                    }}
+                    disabled={busyAppointmentId === appointment.id}
+                    testID={`appointment-complete-${appointment.id}`}
+                  />
+                  <ActionButton
+                    label="Cancel"
+                    icon="x"
+                    tone="danger"
+                    onPress={() => {
+                      void handleStatusChange(appointment.id, "cancelled")
+                    }}
+                    disabled={busyAppointmentId === appointment.id}
+                    testID={`appointment-cancel-${appointment.id}`}
+                  />
+                </View>
+              ) : null}
+            </SurfaceCard>
+          ))}
+          {appointmentNextOffset !== undefined ? (
+            <ActionButton
+              label={isLoadingMoreAppointments ? "Loading..." : "Load more"}
+              tone="secondary"
+              onPress={() => {
+                void handleLoadMoreAppointments()
+              }}
+              disabled={isLoadingMoreAppointments}
+              testID="appointments-load-more"
+            />
+          ) : null}
+        </>
       )}
       <BottomSheet
         visible={isScheduleSheetOpen}

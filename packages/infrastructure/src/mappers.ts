@@ -2,10 +2,12 @@ import type {
   AgentProfile,
   AgentSettings,
   Appointment,
+  ContactMethod,
   CustomQuestion,
   IntakeDraft,
   Invite,
   Lead,
+  LeadContactInteraction,
   QuestionTemplate,
   ScoreBreakdown,
   ScoreOverride,
@@ -171,6 +173,22 @@ export function mapQuestionTemplate(row: {
   }
 }
 
+export function mapLeadContactInteractionRecord(row: {
+  id: string
+  lead_id: string
+  agent_id: string
+  method: ContactMethod
+  occurred_at: string
+}): LeadContactInteraction {
+  return {
+    id: row.id,
+    leadId: row.lead_id,
+    agentId: row.agent_id,
+    method: row.method,
+    occurredAt: row.occurred_at
+  }
+}
+
 export function mapLeadRecord(
   row: {
     id: string
@@ -197,7 +215,14 @@ export function mapLeadRecord(
     breakdown?: JsonValue | null
     overridden?: boolean
     override_meta?: JsonValue | null
-  }
+  },
+  contactInteractionRows: Array<{
+    id: string
+    lead_id: string
+    agent_id: string
+    method: ContactMethod
+    occurred_at: string
+  }> = []
 ): Lead {
   const { answers, customAnswers } = buildAnswerMaps(answerRows, row)
   const scoreOverride =
@@ -234,7 +259,10 @@ export function mapLeadRecord(
     customAnswers,
     scoreBreakdown: parseBreakdown(scoreRow?.breakdown ?? null),
     scoreOverride,
-    review
+    review,
+    contactInteractions: contactInteractionRows.map((interactionRow) =>
+      mapLeadContactInteractionRecord(interactionRow)
+    )
   }
 }
 
@@ -300,6 +328,11 @@ export function mapShowing(row: {
   }
 }
 
+function normalizeTimeForContract(value: string) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d(?:\.\d+)?)?$/.exec(value)
+  return match ? `${match[1]}:${match[2]}` : value
+}
+
 export function mapAppointment(
   row: {
     id: string
@@ -329,7 +362,7 @@ export function mapAppointment(
     id: row.id,
     leadId: row.lead_id,
     date: row.date,
-    startTime: row.start_time,
+    startTime: normalizeTimeForContract(row.start_time),
     status: row.status,
     notes: row.notes ?? undefined,
     createdAt: row.created_at,

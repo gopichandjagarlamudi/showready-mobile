@@ -13,9 +13,11 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
 
 describe("SettingsScreen", () => {
   let saveSettings: jest.Mock
+  let submitFeedback: jest.Mock
 
   beforeEach(() => {
     saveSettings = jest.fn(async () => undefined)
+    submitFeedback = jest.fn(async () => ({ ok: true }))
     useSession.mockReturnValue({
       session: {
         user: {
@@ -33,7 +35,8 @@ describe("SettingsScreen", () => {
         licenseNumber: "SR-2026-001",
         emailNotificationsEnabled: false
       })),
-      saveSettings
+      saveSettings,
+      submitFeedback
     })
   })
 
@@ -94,6 +97,40 @@ describe("SettingsScreen", () => {
         licenseNumber: "SR-2026-001",
         emailNotificationsEnabled: true
       })
+    })
+  })
+
+  it("submits feedback from settings and clears the message", async () => {
+    const screen = render(<SettingsScreen />)
+
+    await screen.findByTestId("settings-save-button")
+
+    fireEvent.changeText(
+      screen.getByTestId("settings-feedback-input"),
+      "  Please add calendar sync for showings.  "
+    )
+    fireEvent.press(screen.getByTestId("settings-feedback-submit-button"))
+
+    await waitFor(() => {
+      expect(submitFeedback).toHaveBeenCalledWith({
+        message: "Please add calendar sync for showings."
+      })
+      expect(screen.getByText("Feedback sent")).toBeTruthy()
+      expect(screen.getByTestId("settings-feedback-input").props.value).toBe("")
+    })
+  })
+
+  it("requires feedback before submitting", async () => {
+    const screen = render(<SettingsScreen />)
+
+    await screen.findByTestId("settings-save-button")
+
+    fireEvent.changeText(screen.getByTestId("settings-feedback-input"), "   ")
+    fireEvent.press(screen.getByTestId("settings-feedback-submit-button"))
+
+    await waitFor(() => {
+      expect(submitFeedback).not.toHaveBeenCalled()
+      expect(screen.getByText("Feedback required")).toBeTruthy()
     })
   })
 })

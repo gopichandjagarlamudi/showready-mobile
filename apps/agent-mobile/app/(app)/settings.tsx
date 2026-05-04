@@ -36,6 +36,13 @@ export default function SettingsScreen() {
   } | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [feedback, setFeedback] = useState("")
+  const [feedbackNotice, setFeedbackNotice] = useState<{
+    tone: "success" | "error"
+    title: string
+    message: string
+  } | null>(null)
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
 
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(savedForm),
@@ -147,6 +154,40 @@ export default function SettingsScreen() {
     }
   }
 
+  async function submitFeedback() {
+    const message = feedback.trim()
+
+    if (!message) {
+      setFeedbackNotice({
+        tone: "error",
+        title: "Feedback required",
+        message: "Share what to improve or which feature would help your workflow."
+      })
+      return
+    }
+
+    setIsSubmittingFeedback(true)
+    setFeedbackNotice(null)
+
+    try {
+      await api.submitFeedback({ message })
+      setFeedback("")
+      setFeedbackNotice({
+        tone: "success",
+        title: "Feedback sent",
+        message: "Thanks. Your feedback has been saved for the ShowReady team."
+      })
+    } catch (error) {
+      setFeedbackNotice({
+        tone: "error",
+        title: "Unable to send feedback",
+        message: error instanceof Error ? error.message : "Try again."
+      })
+    } finally {
+      setIsSubmittingFeedback(false)
+    }
+  }
+
   return (
     <ScreenShell
       title="Settings"
@@ -178,59 +219,89 @@ export default function SettingsScreen() {
           body="Try again once the workspace reconnects."
         />
       ) : (
-        <SurfaceCard style={styles.formCard}>
-          <FormField
-            label="Full name"
-            value={form.fullName}
-            onChangeText={(fullName: string) => setForm((current) => ({ ...current, fullName }))}
-            placeholder="Demo Agent"
-            textContentType="name"
-            autoComplete="name"
-            testID="settings-full-name-input"
-          />
-          <FormField
-            label="Brokerage"
-            value={form.brokerage}
-            onChangeText={(brokerage: string) => setForm((current) => ({ ...current, brokerage }))}
-            placeholder="Northline Realty"
-            textContentType="organizationName"
-            testID="settings-brokerage-input"
-          />
-          <FormField
-            label="License number"
-            value={form.licenseNumber}
-            onChangeText={(licenseNumber: string) =>
-              setForm((current) => ({ ...current, licenseNumber }))
-            }
-            placeholder="SR-2026-001"
-            testID="settings-license-number-input"
-          />
-          <View style={styles.preferenceRow}>
-            <View style={styles.preferenceCopy}>
-              <Text style={styles.preferenceTitle}>Also send email notification</Text>
-            </View>
-            <Switch
-              testID="settings-email-notifications-toggle"
-              value={form.emailNotificationsEnabled}
-              onValueChange={(emailNotificationsEnabled: boolean) =>
-                setForm((current) => ({ ...current, emailNotificationsEnabled }))
-              }
-              trackColor={{
-                false: mobileTheme.colors.borderStrong,
-                true: mobileTheme.colors.brand
-              }}
+        <>
+          <SurfaceCard style={styles.formCard}>
+            <FormField
+              label="Full name"
+              value={form.fullName}
+              onChangeText={(fullName: string) => setForm((current) => ({ ...current, fullName }))}
+              placeholder="Demo Agent"
+              textContentType="name"
+              autoComplete="name"
+              testID="settings-full-name-input"
             />
-          </View>
+            <FormField
+              label="Brokerage"
+              value={form.brokerage}
+              onChangeText={(brokerage: string) => setForm((current) => ({ ...current, brokerage }))}
+              placeholder="Northline Realty"
+              textContentType="organizationName"
+              testID="settings-brokerage-input"
+            />
+            <FormField
+              label="License number"
+              value={form.licenseNumber}
+              onChangeText={(licenseNumber: string) =>
+                setForm((current) => ({ ...current, licenseNumber }))
+              }
+              placeholder="SR-2026-001"
+              testID="settings-license-number-input"
+            />
+            <View style={styles.preferenceRow}>
+              <View style={styles.preferenceCopy}>
+                <Text style={styles.preferenceTitle}>Also send email notification</Text>
+              </View>
+              <Switch
+                testID="settings-email-notifications-toggle"
+                value={form.emailNotificationsEnabled}
+                onValueChange={(emailNotificationsEnabled: boolean) =>
+                  setForm((current) => ({ ...current, emailNotificationsEnabled }))
+                }
+                trackColor={{
+                  false: mobileTheme.colors.borderStrong,
+                  true: mobileTheme.colors.brand
+                }}
+              />
+            </View>
 
-          <ActionButton
-            label={isSaving ? "Saving settings..." : "Save settings"}
-            onPress={() => {
-              void save()
-            }}
-            disabled={isSaving || !isDirty}
-            testID="settings-save-button"
-          />
-        </SurfaceCard>
+            <ActionButton
+              label={isSaving ? "Saving settings..." : "Save settings"}
+              onPress={() => {
+                void save()
+              }}
+              disabled={isSaving || !isDirty}
+              testID="settings-save-button"
+            />
+          </SurfaceCard>
+
+          <SurfaceCard style={styles.feedbackCard}>
+            {feedbackNotice ? (
+              <InlineMessage
+                tone={feedbackNotice.tone}
+                title={feedbackNotice.title}
+                message={feedbackNotice.message}
+              />
+            ) : null}
+            <FormField
+              label="Feedback"
+              value={feedback}
+              onChangeText={setFeedback}
+              placeholder="What should we improve or build next?"
+              helperText="Share what would make ShowReady better for your real estate workflow."
+              multiline
+              testID="settings-feedback-input"
+            />
+            <ActionButton
+              label={isSubmittingFeedback ? "Sending feedback..." : "Submit feedback"}
+              icon="send"
+              onPress={() => {
+                void submitFeedback()
+              }}
+              disabled={isSubmittingFeedback}
+              testID="settings-feedback-submit-button"
+            />
+          </SurfaceCard>
+        </>
       )}
     </ScreenShell>
   )
@@ -247,6 +318,9 @@ const styles = StyleSheet.create({
     color: mobileTheme.colors.ink
   },
   formCard: {
+    gap: 16
+  },
+  feedbackCard: {
     gap: 16
   },
   preferenceRow: {

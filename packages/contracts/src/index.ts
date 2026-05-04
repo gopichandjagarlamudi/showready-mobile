@@ -163,6 +163,16 @@ export type LeadReview = {
   isOverride: boolean
 }
 
+export type ContactMethod = "call" | "text" | "email"
+
+export type LeadContactInteraction = {
+  id: string
+  leadId: string
+  agentId: string
+  method: ContactMethod
+  occurredAt: string
+}
+
 export type CustomQuestionType = "single_select" | "multi_select" | "text"
 
 export type QuestionOption = {
@@ -252,6 +262,7 @@ export type Lead = {
   scoreBreakdown?: ScoreBreakdown
   scoreOverride?: ScoreOverride
   review?: LeadReview
+  contactInteractions?: LeadContactInteraction[]
 }
 
 export type Showing = {
@@ -279,6 +290,33 @@ export type Appointment = {
   showings: Showing[]
 }
 
+export type LeadListScope = "all" | "new" | "appointment_eligible"
+
+export type LeadListQuery = {
+  scope: LeadListScope
+  query?: string
+  limit: number
+  offset: number
+}
+
+export type LeadListResponse = {
+  leads: Lead[]
+  total: number
+  nextOffset?: number
+}
+
+export type AppointmentListQuery = {
+  status: AppointmentStatus
+  limit: number
+  offset: number
+}
+
+export type AppointmentListResponse = {
+  appointments: Appointment[]
+  total: number
+  nextOffset?: number
+}
+
 export type Invite = {
   id: string
   agentId: string
@@ -295,11 +333,63 @@ export type Invite = {
 
 export type DashboardSummary = {
   totalLeads: number
+  newLeads: number
   readyToShow: number
   appointmentBooked: number
   nurture: number
   hold: number
   averageScore: number
+}
+
+export type PipelineTab = "active" | "resolved"
+export type PipelineCategory =
+  | "all"
+  | "ready_to_show"
+  | "nurture"
+  | "hold"
+  | "closed_won"
+  | "closed_lost"
+  | "archived"
+export type PipelineMode = "focus_queue" | "filtered_results"
+export type PipelineLead = Pick<
+  Lead,
+  | "id"
+  | "agentId"
+  | "intakeType"
+  | "buyerName"
+  | "buyerPhone"
+  | "buyerEmail"
+  | "status"
+  | "pipelineStage"
+  | "submittedAt"
+  | "score"
+  | "recommendation"
+  | "summary"
+  | "createdAt"
+  | "updatedAt"
+  | "reviewedAt"
+  | "reviewedStage"
+  | "review"
+> & {
+  lastMovementAt?: string
+  attentionReason?: string
+  latestContactInteraction?: LeadContactInteraction
+}
+export type PipelineLeadListQuery = {
+  tab: PipelineTab
+  category: PipelineCategory
+  query?: string
+  submittedFrom?: string
+  submittedTo?: string
+  limit: number
+  offset: number
+}
+export type PipelineLeadListResponse = {
+  leads: PipelineLead[]
+  total: number
+  nextOffset?: number
+  mode: PipelineMode
+  summaryLabel: string
 }
 
 export const CONTACT_QUESTIONS: QuestionDefinition[] = [
@@ -600,13 +690,369 @@ export const DEFAULT_TEMPLATES: Record<IntakeType, QuestionTemplate> = {
   rental: DEFAULT_RENTAL_TEMPLATE
 }
 
+const RESOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const TIME_24H_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
+
+const optionalLimitedString = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+
+const limitedString = (max: number) => z.string().trim().max(max)
+const requiredLimitedString = (max: number) => limitedString(max).min(1)
+
+export const ResourceIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(72)
+  .regex(RESOURCE_ID_PATTERN, "Resource id contains unsupported characters.")
+
+const EmailSchema = z.string().trim().email().max(254)
+const OptionalEmailSchema = EmailSchema.optional()
+const PhoneSchema = z.string().trim().max(32).optional()
+
+const BuyerPurchaseGoalSchema = z.enum(["myself", "investment", "not_sure"])
+const BuyerTimelineSchema = z.enum([
+  "asap",
+  "within_1_month",
+  "1_3_months",
+  "3_6_months",
+  "6_plus_months",
+  "exploring"
+])
+const BuyerBudgetKnowledgeSchema = z.enum(["know_it", "rough_idea", "not_yet"])
+const BuyerMortgageStatusSchema = z.enum(["pre_approved", "not_yet", "cash", "not_sure"])
+const BuyerPropertyTypeSchema = z.enum([
+  "condo",
+  "townhouse",
+  "detached",
+  "semi_detached",
+  "multi_family",
+  "other"
+])
+const BuyerMustHaveSchema = z.enum([
+  "parking",
+  "backyard",
+  "near_transit",
+  "near_school",
+  "pet_friendly",
+  "low_maintenance"
+])
+const WorkedWithAnotherRealtorSchema = z.enum(["yes", "no", "browsing"])
+const RentalMoveTimelineSchema = z.enum([
+  "asap",
+  "within_2_weeks",
+  "within_1_month",
+  "1_3_months",
+  "exploring"
+])
+const RentalPlaceTypeSchema = z.enum([
+  "condo",
+  "apartment",
+  "basement",
+  "house",
+  "room",
+  "not_sure"
+])
+const PetAnswerSchema = z.enum(["yes", "no"])
+const IncomeProofAnswerSchema = z.enum(["yes", "no", "discuss_later"])
+const RentalMustHaveSchema = z.enum([
+  "parking",
+  "laundry",
+  "furnished",
+  "balcony",
+  "near_transit",
+  "pet_friendly"
+])
+const RentedInCanadaAnswerSchema = z.enum(["yes", "no"])
+const IntakeIntentSchema = z.enum(["buy", "rent"])
+
+const CustomAnswerValueSchema = z.union([
+  limitedString(1000),
+  z.array(limitedString(250)).max(20)
+])
+const CustomAnswersSchema = z
+  .record(
+    z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),
+    CustomAnswerValueSchema
+  )
+  .superRefine((value, context) => {
+    if (Object.keys(value).length > 20) {
+      context.addIssue({
+        code: "custom",
+        message: "Custom answers cannot contain more than 20 fields."
+      })
+    }
+  })
+
+const IntakeContactSchema = z.strictObject({
+  fullName: limitedString(120),
+  phone: PhoneSchema,
+  email: OptionalEmailSchema
+})
+const BuyerDraftSchema = z.strictObject({
+  buyingFor: BuyerPurchaseGoalSchema.optional(),
+  timeline: BuyerTimelineSchema.optional(),
+  budgetKnowledge: BuyerBudgetKnowledgeSchema.optional(),
+  mortgageStatus: BuyerMortgageStatusSchema.optional(),
+  neighborhoods: optionalLimitedString(160),
+  propertyType: z.array(BuyerPropertyTypeSchema).max(8).optional(),
+  bedrooms: optionalLimitedString(32),
+  bathrooms: optionalLimitedString(32),
+  mustHaves: z.array(BuyerMustHaveSchema).max(8).optional(),
+  workedWithAnotherRealtor: WorkedWithAnotherRealtorSchema.optional(),
+  additionalContext: optionalLimitedString(1000)
+})
+const RentalDraftSchema = z.strictObject({
+  moveTimeline: RentalMoveTimelineSchema.optional(),
+  rentRange: optionalLimitedString(80),
+  neighborhoods: optionalLimitedString(160),
+  placeType: z.array(RentalPlaceTypeSchema).max(8).optional(),
+  bedrooms: optionalLimitedString(32),
+  hasPets: PetAnswerSchema.optional(),
+  occupantCount: optionalLimitedString(32),
+  incomeProof: IncomeProofAnswerSchema.optional(),
+  preferredMoveInDate: optionalLimitedString(40),
+  mustHaves: z.array(RentalMustHaveSchema).max(8).optional(),
+  rentedInCanadaBefore: RentedInCanadaAnswerSchema.optional(),
+  additionalContext: optionalLimitedString(1000)
+})
+
+export const IntakeDraftSchema = z.strictObject({
+  contact: IntakeContactSchema,
+  intent: IntakeIntentSchema.optional(),
+  buyer: BuyerDraftSchema.optional(),
+  rental: RentalDraftSchema.optional(),
+  customAnswers: CustomAnswersSchema.optional()
+})
+
+export const PublicIntakePayloadSchema = z.strictObject({
+  draft: IntakeDraftSchema,
+  guard: z
+    .strictObject({
+      startedAt: z.number().finite().optional(),
+      website: z.string().max(2048).optional()
+    })
+    .optional()
+})
+
 export const DashboardSummarySchema = z.object({
   totalLeads: z.number().int().nonnegative(),
+  newLeads: z.number().int().nonnegative(),
   readyToShow: z.number().int().nonnegative(),
   appointmentBooked: z.number().int().nonnegative(),
   nurture: z.number().int().nonnegative(),
   hold: z.number().int().nonnegative(),
   averageScore: z.number().nonnegative()
+})
+
+const PipelineLimitSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null || value === "") {
+      return 25
+    }
+
+    return Math.min(Number(value), 50)
+  },
+  z.number().int().min(1).max(50)
+)
+const PipelineOffsetSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null || value === "") {
+      return 0
+    }
+
+    return Number(value)
+  },
+  z.number().int().nonnegative().max(10_000)
+)
+const OptionalTrimmedStringSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined
+    }
+
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  },
+  z.string().max(120).optional()
+)
+const OptionalDateTimeStringSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") {
+      return undefined
+    }
+
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  },
+  z.string().datetime().optional()
+)
+
+export const PipelineTabSchema = z.enum(["active", "resolved"])
+export const LeadStageSchema = z.enum([
+  "new",
+  "ready_to_show",
+  "appointment_booked",
+  "nurture",
+  "hold",
+  "closed_won",
+  "closed_lost",
+  "archived"
+])
+export const LeadStatusSchema = z.enum(["pending", "submitted", "archived"])
+export const RecommendationSchema = z.enum(["show", "nurture", "hold"])
+export const ContactMethodSchema = z.enum(["call", "text", "email"])
+export const LeadContactInteractionSchema = z.strictObject({
+  id: z.string().min(1),
+  leadId: z.string().min(1),
+  agentId: z.string().min(1),
+  method: ContactMethodSchema,
+  occurredAt: z.string().datetime({ offset: true })
+})
+export const LeadContactInteractionCreateSchema = z.strictObject({
+  method: ContactMethodSchema
+})
+export const IntakeTypeSchema = z.enum(["sale", "rental"])
+export const AppointmentStatusValueSchema = z.enum(["scheduled", "completed", "cancelled"])
+export const LeadListScopeSchema = z.enum(["all", "new", "appointment_eligible"])
+export const LeadListQuerySchema = z.strictObject({
+  scope: LeadListScopeSchema.default("all"),
+  query: OptionalTrimmedStringSchema,
+  limit: PipelineLimitSchema,
+  offset: PipelineOffsetSchema
+})
+export const AppointmentListQuerySchema = z.strictObject({
+  status: AppointmentStatusValueSchema.default("scheduled"),
+  limit: PipelineLimitSchema,
+  offset: PipelineOffsetSchema
+})
+export const PipelineCategorySchema = z.enum([
+  "all",
+  "ready_to_show",
+  "nurture",
+  "hold",
+  "closed_won",
+  "closed_lost",
+  "archived"
+])
+export const PipelineModeSchema = z.enum(["focus_queue", "filtered_results"])
+export const PipelineLeadListQuerySchema = z.strictObject({
+  tab: PipelineTabSchema.default("active"),
+  category: PipelineCategorySchema.default("all"),
+  query: OptionalTrimmedStringSchema,
+  submittedFrom: OptionalDateTimeStringSchema,
+  submittedTo: OptionalDateTimeStringSchema,
+  limit: PipelineLimitSchema,
+  offset: PipelineOffsetSchema
+})
+export const PipelineLeadSchema = z.object({
+  id: z.string().min(1),
+  agentId: z.string().min(1),
+  intakeType: IntakeTypeSchema,
+  buyerName: z.string().min(1),
+  buyerPhone: z.string().optional(),
+  buyerEmail: z.string().optional(),
+  status: LeadStatusSchema,
+  pipelineStage: LeadStageSchema,
+  submittedAt: z.string().optional(),
+  score: z.number().optional(),
+  recommendation: RecommendationSchema.optional(),
+  summary: z.string().optional(),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+  reviewedAt: z.string().optional(),
+  reviewedStage: LeadStageSchema.optional(),
+  review: z
+    .object({
+      suggestedStage: LeadStageSchema.optional(),
+      reviewedStage: LeadStageSchema.optional(),
+      reviewedAt: z.string().optional(),
+      isReviewed: z.boolean(),
+      isOverride: z.boolean()
+    })
+    .optional(),
+  lastMovementAt: z.string().optional(),
+  attentionReason: z.string().optional(),
+  latestContactInteraction: LeadContactInteractionSchema.optional()
+})
+export const LeadSchema = PipelineLeadSchema.extend({
+  token: z.string().min(1),
+  tokenExpiresAt: z.string().min(1),
+  answers: IntakeDraftSchema.optional(),
+  customAnswers: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
+  scoreBreakdown: z
+    .object({
+      urgency: z.number(),
+      finances: z.number(),
+      clarity: z.number(),
+      readiness: z.number(),
+      fit: z.number()
+    })
+    .optional(),
+  scoreOverride: z
+    .object({
+      id: z.string().min(1),
+      originalScore: z.number(),
+      originalRecommendation: RecommendationSchema,
+      overrideScore: z.number(),
+      overrideRecommendation: RecommendationSchema,
+      note: z.string(),
+      createdAt: z.string(),
+      createdByAgentId: z.string()
+    })
+    .optional(),
+  contactInteractions: z.array(LeadContactInteractionSchema).optional()
+}).omit({
+  lastMovementAt: true,
+  attentionReason: true,
+  latestContactInteraction: true
+})
+export const LeadListResponseSchema = z.object({
+  leads: z.array(LeadSchema),
+  total: z.number().int().nonnegative(),
+  nextOffset: z.number().int().positive().optional()
+})
+export const ShowingSchema = z.object({
+  id: z.string().min(1),
+  appointmentId: z.string().min(1),
+  address: z.string().min(1),
+  orderIndex: z.number().int().nonnegative(),
+  notes: z.string().optional()
+})
+export const AppointmentLeadSummarySchema = z.object({
+  id: z.string().min(1),
+  buyerName: z.string().min(1),
+  buyerPhone: z.string().optional(),
+  buyerEmail: z.string().optional(),
+  pipelineStage: LeadStageSchema
+})
+export const AppointmentSchema = z.object({
+  id: z.string().min(1),
+  leadId: z.string().min(1),
+  date: z.string().regex(DATE_ONLY_PATTERN, "Date must use YYYY-MM-DD format."),
+  startTime: z.string().regex(TIME_24H_PATTERN, "Start time must use HH:mm format."),
+  status: AppointmentStatusValueSchema,
+  notes: z.string().optional(),
+  createdAt: z.string().min(1),
+  lead: AppointmentLeadSummarySchema,
+  showings: z.array(ShowingSchema)
+})
+export const AppointmentListResponseSchema = z.object({
+  appointments: z.array(AppointmentSchema),
+  total: z.number().int().nonnegative(),
+  nextOffset: z.number().int().positive().optional()
+})
+export const PipelineLeadListResponseSchema = z.object({
+  leads: z.array(PipelineLeadSchema),
+  total: z.number().int().nonnegative(),
+  nextOffset: z.number().int().positive().optional(),
+  mode: PipelineModeSchema,
+  summaryLabel: z.string().min(1)
 })
 
 export const CreateInviteResponseSchema = z.object({
@@ -615,7 +1061,7 @@ export const CreateInviteResponseSchema = z.object({
   expiresAt: z.string().datetime()
 })
 
-export const LeadStageMutationSchema = z.object({
+export const LeadStageMutationSchema = z.strictObject({
   pipelineStage: z.enum([
     "ready_to_show",
     "nurture",
@@ -626,38 +1072,51 @@ export const LeadStageMutationSchema = z.object({
   ])
 })
 
-export const ReviewLeadSchema = z.object({
-  leadId: z.string().min(1),
+export const ReviewLeadSchema = z.strictObject({
+  leadId: ResourceIdSchema,
   pipelineStage: z.enum(["ready_to_show", "nurture", "hold"])
 })
 
-export const AppointmentMutationSchema = z.object({
-  appointmentId: z.string().min(1).optional(),
-  leadId: z.string().min(1),
-  date: z.string().min(1),
-  startTime: z.string().min(1),
-  notes: z.string().optional(),
+export const AppointmentMutationSchema = z.strictObject({
+  appointmentId: ResourceIdSchema.optional(),
+  leadId: ResourceIdSchema,
+  date: z.string().regex(DATE_ONLY_PATTERN, "Date must use YYYY-MM-DD format."),
+  startTime: z.string().regex(TIME_24H_PATTERN, "Start time must use HH:mm format."),
+  notes: optionalLimitedString(1000),
   showings: z
     .array(
-      z.object({
-        address: z.string().min(1),
-        notes: z.string().optional()
+      z.strictObject({
+        address: requiredLimitedString(200),
+        notes: optionalLimitedString(1000)
       })
     )
     .min(1)
+    .max(10)
 })
 
-export const AppointmentStatusSchema = z.object({
-  appointmentId: z.string().min(1),
+export const AppointmentStatusSchema = z.strictObject({
+  appointmentId: ResourceIdSchema,
   status: z.enum(["scheduled", "completed", "cancelled"])
 })
 
-export const SettingsMutationSchema = z.object({
-  fullName: z.string().min(1),
-  brokerage: z.string().optional(),
-  licenseNumber: z.string().optional(),
+export const SettingsMutationSchema = z.strictObject({
+  fullName: requiredLimitedString(120),
+  brokerage: optionalLimitedString(120),
+  licenseNumber: optionalLimitedString(64),
   emailNotificationsEnabled: z.boolean()
 })
+
+export const FeedbackSubmissionSchema = z.strictObject({
+  message: limitedString(2000).min(1, "Feedback message is required.")
+})
+
+export type FeedbackSubmission = z.infer<typeof FeedbackSubmissionSchema>
+
+export const FeedbackSubmissionResponseSchema = z.strictObject({
+  ok: z.literal(true)
+})
+
+export type FeedbackSubmissionResponse = z.infer<typeof FeedbackSubmissionResponseSchema>
 
 export type DiagnosticsSeverity = "debug" | "info" | "warning" | "error" | "fatal"
 export type DiagnosticsCategory =
@@ -721,12 +1180,12 @@ export const DiagnosticsPlatformSchema = z.enum(["ios", "android", "web", "unkno
 
 export const DiagnosticsMetadataValueSchema: z.ZodType<DiagnosticsMetadataValue> = z.lazy(() =>
   z.union([
-    z.string(),
-    z.number(),
+    z.string().max(2000),
+    z.number().finite(),
     z.boolean(),
     z.null(),
-    z.array(DiagnosticsMetadataValueSchema),
-    z.record(z.string(), DiagnosticsMetadataValueSchema)
+    z.array(DiagnosticsMetadataValueSchema).max(20),
+    z.record(z.string().min(1).max(64), DiagnosticsMetadataValueSchema)
   ])
 )
 
@@ -735,32 +1194,32 @@ export const DiagnosticsMetadataSchema: z.ZodType<DiagnosticsMetadata> = z.recor
   DiagnosticsMetadataValueSchema
 )
 
-export const DiagnosticsBreadcrumbSchema = z.object({
+export const DiagnosticsBreadcrumbSchema = z.strictObject({
   timestamp: z.string().datetime(),
-  type: z.string().min(1),
-  message: z.string().min(1),
+  type: requiredLimitedString(64),
+  message: requiredLimitedString(500),
   data: DiagnosticsMetadataSchema.optional()
 })
 
-export const DiagnosticsEventSchema = z.object({
+export const DiagnosticsEventSchema = z.strictObject({
   id: z.string().uuid(),
-  sessionId: z.string().min(1),
-  deviceId: z.string().min(1),
+  sessionId: requiredLimitedString(128),
+  deviceId: requiredLimitedString(128),
   occurredAt: z.string().datetime(),
   eventType: DiagnosticsEventTypeSchema,
   category: DiagnosticsCategorySchema,
   severity: DiagnosticsSeveritySchema,
-  message: z.string().min(1),
-  fingerprint: z.string().min(1).optional(),
-  screen: z.string().min(1).optional(),
-  appVersion: z.string().min(1).optional(),
-  buildNumber: z.string().min(1).optional(),
+  message: requiredLimitedString(2000),
+  fingerprint: requiredLimitedString(256).optional(),
+  screen: requiredLimitedString(160).optional(),
+  appVersion: requiredLimitedString(64).optional(),
+  buildNumber: requiredLimitedString(64).optional(),
   platform: DiagnosticsPlatformSchema,
-  requestPath: z.string().min(1).optional(),
+  requestPath: requiredLimitedString(160).optional(),
   httpStatus: z.number().int().min(100).max(599).optional(),
-  leadId: z.string().min(1).optional(),
-  appointmentId: z.string().min(1).optional(),
-  pipelineStage: z.string().min(1).optional(),
+  leadId: ResourceIdSchema.optional(),
+  appointmentId: ResourceIdSchema.optional(),
+  pipelineStage: z.string().min(1).max(64).optional(),
   context: DiagnosticsMetadataSchema.default({}),
   breadcrumbs: z.array(DiagnosticsBreadcrumbSchema).max(50).default([]),
   tags: DiagnosticsMetadataSchema.default({})
@@ -768,7 +1227,7 @@ export const DiagnosticsEventSchema = z.object({
 
 export type DiagnosticsEvent = z.infer<typeof DiagnosticsEventSchema>
 
-export const DiagnosticsBatchSchema = z.object({
+export const DiagnosticsBatchSchema = z.strictObject({
   events: z
     .array(DiagnosticsEventSchema)
     .min(1, "Diagnostics batch must contain at least one event.")
@@ -784,3 +1243,175 @@ export const DiagnosticsBatchResponseSchema = z.object({
 })
 
 export type DiagnosticsBatchResponse = z.infer<typeof DiagnosticsBatchResponseSchema>
+
+export const EventMetadataSchema = z.record(
+  z.string().min(1).max(64),
+  DiagnosticsMetadataValueSchema
+)
+
+export type EventMetadata = z.infer<typeof EventMetadataSchema>
+
+export const ProductEventNameSchema = z.enum([
+  "invite.created",
+  "invite.shared",
+  "intake.opened",
+  "intake.step_viewed",
+  "intake.step_completed",
+  "intake.autosaved",
+  "intake.submitted",
+  "lead.created",
+  "lead.viewed",
+  "lead.reviewed",
+  "lead.stage_changed",
+  "lead.score_overridden",
+  "appointment.created",
+  "appointment.updated",
+  "settings.updated",
+  "notification.permission_requested",
+  "notification.token_registered",
+  "notification.sent",
+  "notification.tapped"
+])
+
+export type ProductEventName = z.infer<typeof ProductEventNameSchema>
+
+export const ProductEventSchema = z.strictObject({
+  id: z.string().uuid(),
+  occurredAt: z.string().datetime(),
+  eventName: ProductEventNameSchema,
+  agentId: ResourceIdSchema.optional(),
+  workspaceId: ResourceIdSchema.optional(),
+  actorId: ResourceIdSchema.optional(),
+  resourceType: requiredLimitedString(64).optional(),
+  resourceId: ResourceIdSchema.optional(),
+  platform: DiagnosticsPlatformSchema,
+  appVersion: requiredLimitedString(64).optional(),
+  buildNumber: requiredLimitedString(64).optional(),
+  route: requiredLimitedString(160).optional(),
+  properties: EventMetadataSchema.default({})
+})
+
+export type ProductEvent = z.infer<typeof ProductEventSchema>
+
+export const ProductEventBatchSchema = z.strictObject({
+  events: z
+    .array(ProductEventSchema)
+    .min(1, "Product event batch must contain at least one event.")
+    .max(50, "Product event batch cannot contain more than 50 events.")
+})
+
+export type ProductEventBatch = z.infer<typeof ProductEventBatchSchema>
+
+export const AuditEventActionSchema = z.enum([
+  "auth.sign_in",
+  "auth.sign_out",
+  "auth.failed",
+  "invite.created",
+  "invite.revoked",
+  "lead.stage_changed",
+  "lead.reviewed",
+  "lead.score_overridden",
+  "appointment.created",
+  "appointment.updated",
+  "appointment.status_changed",
+  "settings.updated",
+  "notification_preferences.updated",
+  "privacy.export_requested",
+  "privacy.delete_requested",
+  "role.changed"
+])
+
+export type AuditEventAction = z.infer<typeof AuditEventActionSchema>
+
+export const AuditActorTypeSchema = z.enum(["agent", "lead", "system", "public_intake"])
+export type AuditActorType = z.infer<typeof AuditActorTypeSchema>
+
+export const AuditEventSchema = z.strictObject({
+  id: z.string().uuid(),
+  occurredAt: z.string().datetime(),
+  action: AuditEventActionSchema,
+  actorId: ResourceIdSchema.optional(),
+  actorType: AuditActorTypeSchema,
+  agentId: ResourceIdSchema.optional(),
+  workspaceId: ResourceIdSchema.optional(),
+  resourceType: requiredLimitedString(64),
+  resourceId: ResourceIdSchema.optional(),
+  requestIp: requiredLimitedString(128).optional(),
+  userAgent: requiredLimitedString(500).optional(),
+  platform: DiagnosticsPlatformSchema.optional(),
+  appVersion: requiredLimitedString(64).optional(),
+  beforeSummary: EventMetadataSchema.default({}),
+  afterSummary: EventMetadataSchema.default({}),
+  metadata: EventMetadataSchema.default({})
+})
+
+export type AuditEvent = z.infer<typeof AuditEventSchema>
+
+export const AuditEventBatchSchema = z.strictObject({
+  events: z
+    .array(AuditEventSchema)
+    .min(1, "Audit event batch must contain at least one event.")
+    .max(50, "Audit event batch cannot contain more than 50 events.")
+})
+
+export type AuditEventBatch = z.infer<typeof AuditEventBatchSchema>
+
+export const ConsentSubjectTypeSchema = z.enum(["agent", "lead", "device", "workspace", "public_intake"])
+export type ConsentSubjectType = z.infer<typeof ConsentSubjectTypeSchema>
+
+export const ConsentTypeSchema = z.enum([
+  "privacy_policy",
+  "terms",
+  "push_notifications",
+  "email_notifications",
+  "marketing_email",
+  "data_export",
+  "data_delete"
+])
+
+export type ConsentType = z.infer<typeof ConsentTypeSchema>
+
+export const ConsentStatusSchema = z.enum([
+  "granted",
+  "denied",
+  "withdrawn",
+  "requested",
+  "completed",
+  "failed",
+  "not_determined"
+])
+
+export type ConsentStatus = z.infer<typeof ConsentStatusSchema>
+
+export const ConsentRecordSchema = z.strictObject({
+  id: z.string().uuid(),
+  subjectType: ConsentSubjectTypeSchema,
+  subjectId: ResourceIdSchema.optional(),
+  agentId: ResourceIdSchema.optional(),
+  consentType: ConsentTypeSchema,
+  status: ConsentStatusSchema,
+  policyVersion: requiredLimitedString(64).optional(),
+  source: requiredLimitedString(128).optional(),
+  occurredAt: z.string().datetime(),
+  expiresAt: z.string().datetime().optional(),
+  metadata: EventMetadataSchema.default({})
+})
+
+export type ConsentRecord = z.infer<typeof ConsentRecordSchema>
+
+export const ConsentRecordBatchSchema = z.strictObject({
+  records: z
+    .array(ConsentRecordSchema)
+    .min(1, "Consent record batch must contain at least one record.")
+    .max(50, "Consent record batch cannot contain more than 50 records.")
+})
+
+export type ConsentRecordBatch = z.infer<typeof ConsentRecordBatchSchema>
+
+export const FirstPartyEventBatchResponseSchema = z.object({
+  acceptedCount: z.number().int().nonnegative(),
+  rejectedCount: z.number().int().nonnegative(),
+  rejectedEventIds: z.array(z.string())
+})
+
+export type FirstPartyEventBatchResponse = z.infer<typeof FirstPartyEventBatchResponseSchema>

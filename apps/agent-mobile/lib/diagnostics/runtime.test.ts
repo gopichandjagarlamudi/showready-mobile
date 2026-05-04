@@ -1,4 +1,5 @@
 import type { DiagnosticsBatch, DiagnosticsBatchResponse } from "@showready/contracts"
+import { DiagnosticsEventSchema } from "@showready/contracts"
 import { createDiagnosticsStore } from "./store"
 import { createDiagnosticsRuntime } from "./runtime"
 
@@ -17,6 +18,84 @@ function createMemoryStorage() {
 }
 
 describe("createDiagnosticsRuntime", () => {
+  const originalCrypto = globalThis.crypto
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: originalCrypto
+    })
+  })
+
+  it("generates contract-valid UUID event ids when global crypto is unavailable", async () => {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: undefined
+    })
+
+    const storage = createMemoryStorage()
+    const store = createDiagnosticsStore({
+      storage,
+      createId: () => "device-1",
+      maxQueueSize: 10,
+      maxBreadcrumbs: 5
+    })
+
+    const runtime = createDiagnosticsRuntime({
+      store,
+      transport: {
+        submitDiagnostics: jest.fn<Promise<DiagnosticsBatchResponse>, [DiagnosticsBatch]>()
+      },
+      now: () => "2026-04-21T12:00:00.000Z",
+      platform: "ios"
+    })
+
+    await runtime.logEvent({
+      eventType: "action.event",
+      category: "action",
+      severity: "info",
+      message: "Action event"
+    })
+
+    const [event] = await store.getQueuedEvents()
+
+    expect(() => DiagnosticsEventSchema.parse(event)).not.toThrow()
+  })
+
+  it("omits invalid network failure status values from diagnostics events", async () => {
+    const storage = createMemoryStorage()
+    const store = createDiagnosticsStore({
+      storage,
+      createId: () => "device-1",
+      maxQueueSize: 10,
+      maxBreadcrumbs: 5
+    })
+
+    const runtime = createDiagnosticsRuntime({
+      store,
+      transport: {
+        submitDiagnostics: jest.fn<Promise<DiagnosticsBatchResponse>, [DiagnosticsBatch]>()
+      },
+      now: () => "2026-04-21T12:00:00.000Z",
+      createId: () => "0c59f42d-ece8-4c07-a4ff-2358a0c1553f",
+      platform: "ios"
+    })
+
+    await runtime.logEvent({
+      eventType: "api.failure",
+      category: "api",
+      severity: "error",
+      message: "Unable to load pipeline leads.",
+      requestPath: "/api/mobile/pipeline/leads?query=buyer@example.com",
+      httpStatus: 0
+    })
+
+    const [event] = await store.getQueuedEvents()
+
+    expect(event.httpStatus).toBeUndefined()
+    expect(() => DiagnosticsEventSchema.parse(event)).not.toThrow()
+  })
+
   it("queues an inferred crash event when the previous session stayed active", async () => {
     const storage = createMemoryStorage()
     const store = createDiagnosticsStore({

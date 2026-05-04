@@ -2,16 +2,21 @@ import { NextResponse } from "next/server"
 import { reviewLeadSubmission } from "@showready/application"
 import { ReviewLeadSchema } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
+import { requestErrorResponse } from "@/lib/observability"
 import { reviewLead } from "@/lib/supabase/data"
 
 export async function POST(request: Request) {
+  let agentId: string | undefined
+
   try {
-    const { agentId, client } = await requireMobileAgent(request)
+    const auth = await requireMobileAgent(request)
+    agentId = auth.agentId
+    const authenticatedAgentId = auth.agentId
     const payload = ReviewLeadSchema.parse(await request.json())
     const lead = await reviewLeadSubmission(
       {
         reviewLead: (leadId, pipelineStage) =>
-          reviewLead(client, agentId, leadId, pipelineStage)
+          reviewLead(auth.client, authenticatedAgentId, leadId, pipelineStage)
       },
       payload.leadId,
       payload.pipelineStage
@@ -20,9 +25,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ lead })
   } catch (error) {
     if (error instanceof MobileAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return requestErrorResponse({
+        request,
+        error,
+        route: "api.mobile.reviews",
+        status: error.status,
+        response: { error: error.message },
+        headers: error.headers
+      })
     }
 
-    return NextResponse.json({ error: "Unable to review lead." }, { status: 400 })
+    return requestErrorResponse({
+      request,
+      error,
+      route: "api.mobile.reviews",
+      status: 400,
+      agentId,
+      response: { error: "Unable to review lead." }
+    })
   }
 }

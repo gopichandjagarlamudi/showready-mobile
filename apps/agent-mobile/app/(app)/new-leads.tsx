@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { StyleSheet, Text, View } from "react-native"
+import { FlatList, StyleSheet, Text, View } from "react-native"
 import { router } from "expo-router"
 import type { Lead } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
@@ -26,6 +26,8 @@ export default function NewLeadsScreen() {
   const api = useMobileApi()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
+  const [nextOffset, setNextOffset] = useState<number | undefined>()
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busyLeadIds, setBusyLeadIds] = useState<Record<string, boolean>>({})
   const [messages, setMessages] = useState<Record<string, string | null>>({})
@@ -38,13 +40,14 @@ export default function NewLeadsScreen() {
     }
 
     api
-      .listNewLeads(session.user.id)
-      .then((rows: Lead[]) => {
+      .listNewLeads({ limit: 25, offset: 0 })
+      .then((page) => {
         if (!isMounted) {
           return
         }
 
-        setLeads(rows)
+        setLeads(page.leads)
+        setNextOffset(page.nextOffset)
         setLoadState("ready")
       })
       .catch((error: Error) => {
@@ -60,6 +63,27 @@ export default function NewLeadsScreen() {
       isMounted = false
     }
   }, [api, session, workspaceVersion])
+
+  async function handleLoadMore() {
+    if (nextOffset === undefined || isLoadingMore) {
+      return
+    }
+
+    setIsLoadingMore(true)
+
+    try {
+      const page = await api.listNewLeads({ limit: 25, offset: nextOffset })
+      setLeads((current) => {
+        const seen = new Set(current.map((lead) => lead.id))
+        return current.concat(page.leads.filter((lead) => !seen.has(lead.id)))
+      })
+      setNextOffset(page.nextOffset)
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load more leads.")
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
 
   async function handleReview(leadId: string, stage: ReviewStage) {
     setMessages((current) => ({ ...current, [leadId]: null }))
@@ -87,6 +111,8 @@ export default function NewLeadsScreen() {
     <ScreenShell
       title="New leads"
       testID="new-leads-screen"
+      scrollable={false}
+      contentStyle={styles.shellContent}
     >
       {loadState === "loading" ? (
         <EmptyState
@@ -104,87 +130,128 @@ export default function NewLeadsScreen() {
           icon="inbox"
         />
       ) : (
-        leads.map((lead) => {
-          const suggestedStage = suggestedReviewStage(lead)
-
-          return (
-            <SurfaceCard key={lead.id} style={styles.card} testID={`new-lead-card-${lead.id}`}>
-              <View style={styles.header}>
-                <View style={styles.headerMeta}>
-                  <Text style={styles.name}>{lead.buyerName}</Text>
-                  <Text style={styles.contact}>
-                    {lead.buyerEmail ?? lead.buyerPhone ?? "Awaiting contact details"}
-                  </Text>
-                </View>
-                <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
-              </View>
-              <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
-              <Text style={styles.hint}>
-                Suggested path: {suggestedStage.replaceAll("_", " ")}
-              </Text>
-              {messages[lead.id] ? (
-                <InlineMessage
-                  tone="error"
-                  title="Unable to review lead"
-                  message={messages[lead.id] ?? "Try again."}
-                />
-              ) : null}
-              <View style={styles.actions}>
-                <ActionButton
-                  label={
-                    busyLeadIds[lead.id] ? "Applying suggestion..." : "Confirm suggestion"
-                  }
-                  onPress={() => {
-                    void handleReview(lead.id, suggestedStage)
-                  }}
-                  disabled={busyLeadIds[lead.id]}
-                  testID={`review-confirm-${lead.id}`}
-                />
-                <View style={styles.secondaryActions}>
-                  <ActionButton
-                    label="Ready"
-                    tone="secondary"
-                    onPress={() => {
-                      void handleReview(lead.id, "ready_to_show")
-                    }}
-                    disabled={busyLeadIds[lead.id]}
-                    testID={`review-ready-${lead.id}`}
-                  />
-                  <ActionButton
-                    label="Nurture"
-                    tone="secondary"
-                    onPress={() => {
-                      void handleReview(lead.id, "nurture")
-                    }}
-                    disabled={busyLeadIds[lead.id]}
-                    testID={`review-nurture-${lead.id}`}
-                  />
-                  <ActionButton
-                    label="Hold"
-                    tone="secondary"
-                    onPress={() => {
-                      void handleReview(lead.id, "hold")
-                    }}
-                    disabled={busyLeadIds[lead.id]}
-                    testID={`review-hold-${lead.id}`}
-                  />
-                </View>
-                <ActionButton
-                  label="Open full detail"
-                  tone="secondary"
-                  onPress={() => router.push(`/lead/${lead.id}`)}
-                  testID={`review-open-${lead.id}`}
-                />
-              </View>
-            </SurfaceCard>
-          )
-        })
+        <FlatList
+          data={leads}
+          keyExtractor={(lead) => lead.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item: lead }) => (
+            <ReviewLeadCard
+              lead={lead}
+              isBusy={Boolean(busyLeadIds[lead.id])}
+              message={messages[lead.id] ?? null}
+              onReview={handleReview}
+            />
+          )}
+          ListFooterComponent={
+            nextOffset !== undefined ? (
+              <ActionButton
+                label={isLoadingMore ? "Loading..." : "Load more"}
+                tone="secondary"
+                disabled={isLoadingMore}
+                onPress={() => {
+                  void handleLoadMore()
+                }}
+                testID="new-leads-load-more"
+              />
+            ) : null
+          }
+        />
       )}
     </ScreenShell>
   )
 }
 
+function ReviewLeadCard({
+  lead,
+  isBusy,
+  message,
+  onReview
+}: {
+  lead: Lead
+  isBusy: boolean
+  message: string | null
+  onReview: (leadId: string, stage: ReviewStage) => Promise<void>
+}) {
+  const suggestedStage = suggestedReviewStage(lead)
+
+  return (
+    <SurfaceCard style={styles.card} testID={`new-lead-card-${lead.id}`}>
+      <View style={styles.header}>
+        <View style={styles.headerMeta}>
+          <Text style={styles.name}>{lead.buyerName}</Text>
+          <Text style={styles.contact}>
+            {lead.buyerEmail ?? lead.buyerPhone ?? "Awaiting contact details"}
+          </Text>
+        </View>
+        <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
+      </View>
+      <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
+      <Text style={styles.hint}>Suggested path: {suggestedStage.replaceAll("_", " ")}</Text>
+      {message ? (
+        <InlineMessage
+          tone="error"
+          title="Unable to review lead"
+          message={message}
+        />
+      ) : null}
+      <View style={styles.actions}>
+        <ActionButton
+          label={isBusy ? "Applying suggestion..." : "Confirm suggestion"}
+          onPress={() => {
+            void onReview(lead.id, suggestedStage)
+          }}
+          disabled={isBusy}
+          testID={`review-confirm-${lead.id}`}
+        />
+        <View style={styles.secondaryActions}>
+          <ActionButton
+            label="Ready"
+            tone="secondary"
+            onPress={() => {
+              void onReview(lead.id, "ready_to_show")
+            }}
+            disabled={isBusy}
+            testID={`review-ready-${lead.id}`}
+          />
+          <ActionButton
+            label="Nurture"
+            tone="secondary"
+            onPress={() => {
+              void onReview(lead.id, "nurture")
+            }}
+            disabled={isBusy}
+            testID={`review-nurture-${lead.id}`}
+          />
+          <ActionButton
+            label="Hold"
+            tone="secondary"
+            onPress={() => {
+              void onReview(lead.id, "hold")
+            }}
+            disabled={isBusy}
+            testID={`review-hold-${lead.id}`}
+          />
+        </View>
+        <ActionButton
+          label="Open full detail"
+          tone="secondary"
+          onPress={() => router.push(`/lead/${lead.id}`)}
+          testID={`review-open-${lead.id}`}
+        />
+      </View>
+    </SurfaceCard>
+  )
+}
+
 const styles = StyleSheet.create({
+  shellContent: {
+    flexGrow: 1
+  },
+  listContent: {
+    gap: 16,
+    paddingBottom: 24
+  },
   card: {
     gap: 16
   },

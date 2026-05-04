@@ -15,6 +15,7 @@ describe("application use cases", () => {
     const gateway = {
       getDashboardSummary: vi.fn(async () => ({
         totalLeads: 12,
+        newLeads: 5,
         readyToShow: 2,
         appointmentBooked: 1,
         nurture: 4,

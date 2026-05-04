@@ -1,6 +1,7 @@
 import { IntakeFlow } from "@/components/intake-flow"
+import { IntakeStatusPage } from "@/components/intake-branding"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
-import { getLeadIntakeContext } from "@/lib/supabase/data"
+import { getPublicLeadIntakeContext } from "@/lib/supabase/data"
 
 export default async function IntakePage({
   params
@@ -9,29 +10,32 @@ export default async function IntakePage({
 }) {
   const { token } = await params
   const supabase = createSupabaseAdminClient()
-  const context = await getLeadIntakeContext(supabase, token)
+  const context = await getPublicLeadIntakeContext(supabase, token)
 
   if (!context) {
     return (
-      <main style={{ padding: 32 }}>
-        <h1>Invite not found</h1>
+      <IntakeStatusPage branding={{}} eyebrow="Invite not found" title="Invite not found">
         <p>This invite may have expired or already been removed.</p>
-      </main>
+      </IntakeStatusPage>
     )
   }
 
   if (context.isExpired) {
     return (
-      <main style={{ padding: 32 }}>
-        <h1>Invite expired</h1>
+      <IntakeStatusPage
+        branding={context.branding}
+        eyebrow="Invite expired"
+        title="Invite expired"
+      >
         <p>This intake link has expired. Please request a fresh invite from your agent.</p>
-      </main>
+      </IntakeStatusPage>
     )
   }
 
   return (
     <IntakeFlow
       token={token}
+      branding={context.branding}
       draft={context.draft}
       saleTemplate={context.templates.sale}
       rentalTemplate={context.templates.rental}

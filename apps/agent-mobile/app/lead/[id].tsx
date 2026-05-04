@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
-import { StyleSheet, Text, View } from "react-native"
+import { AppState, StyleSheet, Text, View } from "react-native"
+import * as Clipboard from "expo-clipboard"
+import * as Linking from "expo-linking"
 import { router, useLocalSearchParams } from "expo-router"
-import type { Lead, LeadStage } from "@showready/contracts"
+import type { ContactMethod, Lead, LeadContactInteraction, LeadStage } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
@@ -10,15 +12,20 @@ import { FormField } from "@/components/ui/form-field"
 import { InlineMessage } from "@/components/ui/inline-message"
 import { StageChip } from "@/components/ui/stage-chip"
 import { SurfaceCard } from "@/components/ui/surface-card"
+import { captureDiagnosticsError } from "@/lib/diagnostics/service"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
+type ReviewStage = Extract<LeadStage, "ready_to_show" | "nurture" | "hold">
+type MoveStage = Extract<
+  LeadStage,
+  "ready_to_show" | "nurture" | "hold" | "closed_won" | "closed_lost" | "archived"
+>
+
 const MOVE_STAGES: Array<
-  Extract<
-    LeadStage,
-    "ready_to_show" | "nurture" | "hold" | "closed_won" | "closed_lost" | "archived"
-  >
+  MoveStage
 > = ["ready_to_show", "nurture", "hold", "closed_won", "closed_lost", "archived"]
+const REVIEW_STAGES: ReviewStage[] = ["ready_to_show", "nurture", "hold"]
 
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -27,11 +34,13 @@ export default function LeadDetailScreen() {
   const [lead, setLead] = useState<Lead | null>(null)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
   const [message, setMessage] = useState<{
-    tone: "success" | "error"
+    tone: "success" | "warning" | "error"
     title: string
     message: string
   } | null>(null)
   const [isStageSheetOpen, setIsStageSheetOpen] = useState(false)
+  const [stageSheetMode, setStageSheetMode] = useState<"move" | "post_contact_review">("move")
+  const [shouldPromptReviewOnReturn, setShouldPromptReviewOnReturn] = useState(false)
   const [isOverrideSheetOpen, setIsOverrideSheetOpen] = useState(false)
   const [overrideScore, setOverrideScore] = useState("")
   const [overrideNote, setOverrideNote] = useState("")
@@ -71,6 +80,22 @@ export default function LeadDetailScreen() {
       isMounted = false
     }
   }, [api, id, workspaceVersion])
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" || !shouldPromptReviewOnReturn) {
+        return
+      }
+
+      setShouldPromptReviewOnReturn(false)
+      setStageSheetMode("post_contact_review")
+      setIsStageSheetOpen(true)
+    })
+
+    return () => {
+      subscription.remove()
+    }
+  }, [shouldPromptReviewOnReturn])
 
   const answerSections = useMemo(() => {
     if (!lead?.answers) {
@@ -115,12 +140,12 @@ export default function LeadDetailScreen() {
     return sections.filter((section) => section.rows.length > 0)
   }, [lead])
 
-  async function moveLead(
-    stage: Extract<
-      LeadStage,
-      "ready_to_show" | "nurture" | "hold" | "closed_won" | "closed_lost" | "archived"
-    >
-  ) {
+  const contactPhone = resolveContactPhone(lead)
+  const phoneUrlValue = contactPhone ? formatPhoneForNativeUrl(contactPhone) : null
+  const contactEmail = resolveContactEmail(lead)
+  const stageOptions = stageSheetMode === "post_contact_review" ? REVIEW_STAGES : MOVE_STAGES
+
+  async function moveLead(stage: MoveStage) {
     if (!lead) {
       return
     }
@@ -129,9 +154,13 @@ export default function LeadDetailScreen() {
     setMessage(null)
 
     try {
-      const result = await api.moveLead(lead.id, stage)
+      const result =
+        stageSheetMode === "post_contact_review" && isReviewStage(stage)
+          ? await api.reviewLead(lead.id, stage)
+          : await api.moveLead(lead.id, stage)
       setLead(result.lead)
       setIsStageSheetOpen(false)
+      setStageSheetMode("move")
       setMessage({
         tone: "success",
         title: "Lead updated",
@@ -145,6 +174,78 @@ export default function LeadDetailScreen() {
       })
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleContactAction(input: {
+    method: ContactMethod
+    url: string
+    copyValue: string
+  }) {
+    if (!lead) {
+      return
+    }
+
+    setBusy(true)
+    setMessage(null)
+
+    try {
+      try {
+        await Linking.openURL(input.url)
+      } catch {
+        await Clipboard.setStringAsync(input.copyValue)
+        setMessage({
+          tone: "warning",
+          title: "Contact copied",
+          message: "The device could not open that contact app, so the contact value was copied."
+        })
+      }
+
+      const result = await api.recordLeadContactInteraction(lead.id, input.method)
+      setLead((current) => appendContactInteraction(current, result.interaction))
+
+      if (lead.pipelineStage === "new") {
+        setShouldPromptReviewOnReturn(true)
+      }
+    } catch (error) {
+      setMessage({
+        tone: "warning",
+        title: "Contact history unavailable",
+        message: "The contact app opened, but ShowReady could not update contact history or priority."
+      })
+      void captureDiagnosticsError(error, {
+        eventType: "error.handled",
+        category: "api",
+        severity: "warning",
+        leadId: lead.id,
+        context: {
+          source: "lead-contact-action",
+          method: input.method
+        }
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function openStageSheet(mode: "move" | "post_contact_review" = "move") {
+    setStageSheetMode(mode)
+    setIsStageSheetOpen(true)
+  }
+
+  function closeStageSheet() {
+    const shouldWarn =
+      stageSheetMode === "post_contact_review" && lead?.pipelineStage === "new"
+
+    setIsStageSheetOpen(false)
+    setStageSheetMode("move")
+
+    if (shouldWarn) {
+      setMessage({
+        tone: "warning",
+        title: "Lead still in New",
+        message: "This lead remains in the review queue until you choose Ready, Nurture, or Hold."
+      })
     }
   }
 
@@ -238,8 +339,80 @@ export default function LeadDetailScreen() {
               </View>
               <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
             </View>
+            {phoneUrlValue || contactEmail ? (
+              <View style={styles.contactActions}>
+                {phoneUrlValue ? (
+                  <>
+                    <View style={styles.contactActionItem}>
+                      <ActionButton
+                        label="Call"
+                        icon="phone"
+                        tone="secondary"
+                        onPress={() => {
+                          void handleContactAction({
+                            method: "call",
+                            url: `tel:${phoneUrlValue}`,
+                            copyValue: contactPhone ?? phoneUrlValue
+                          })
+                        }}
+                        disabled={busy}
+                        testID="lead-contact-call-button"
+                      />
+                    </View>
+                    <View style={styles.contactActionItem}>
+                      <ActionButton
+                        label="Text"
+                        icon="message-circle"
+                        tone="secondary"
+                        onPress={() => {
+                          void handleContactAction({
+                            method: "text",
+                            url: `sms:${phoneUrlValue}`,
+                            copyValue: contactPhone ?? phoneUrlValue
+                          })
+                        }}
+                        disabled={busy}
+                        testID="lead-contact-text-button"
+                      />
+                    </View>
+                  </>
+                ) : null}
+                {contactEmail ? (
+                  <View style={styles.contactActionItem}>
+                    <ActionButton
+                      label="Email"
+                      icon="mail"
+                      tone="secondary"
+                      onPress={() => {
+                        void handleContactAction({
+                          method: "email",
+                          url: `mailto:${contactEmail}`,
+                          copyValue: contactEmail
+                        })
+                      }}
+                      disabled={busy}
+                      testID="lead-contact-email-button"
+                    />
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
             <Text style={styles.score}>Score {lead.score?.toFixed(2) ?? "0.00"}</Text>
             <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
+          </SurfaceCard>
+
+          <SurfaceCard>
+            <Text style={styles.sectionTitle}>Contact history</Text>
+            {lead.contactInteractions && lead.contactInteractions.length > 0 ? (
+              lead.contactInteractions.slice(0, 5).map((interaction) => (
+                <View key={interaction.id} style={styles.historyRow}>
+                  <Text style={styles.answerValue}>{formatContactInteractionLabel(interaction.method)}</Text>
+                  <Text style={styles.copy}>{formatContactInteractionTime(interaction.occurredAt)}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.copy}>No contact attempts yet</Text>
+            )}
           </SurfaceCard>
 
           <SurfaceCard>
@@ -263,7 +436,7 @@ export default function LeadDetailScreen() {
               <ActionButton
                 label="Change stage"
                 icon="sliders"
-                onPress={() => setIsStageSheetOpen(true)}
+                onPress={() => openStageSheet("move")}
                 disabled={busy}
                 testID="lead-open-stage-sheet-button"
               />
@@ -305,13 +478,17 @@ export default function LeadDetailScreen() {
       )}
       <BottomSheet
         visible={isStageSheetOpen}
-        onClose={() => setIsStageSheetOpen(false)}
-        title="Move lead"
-        subtitle="Update the stage without expanding the main detail page."
+        onClose={closeStageSheet}
+        title={stageSheetMode === "post_contact_review" ? "Review contacted lead" : "Move lead"}
+        subtitle={
+          stageSheetMode === "post_contact_review"
+            ? "Choose where this contacted lead belongs in the active pipeline."
+            : "Update the stage without expanding the main detail page."
+        }
         testID="lead-stage-sheet"
       >
         <View style={styles.actions}>
-          {MOVE_STAGES.map((stage) => (
+          {stageOptions.map((stage) => (
             <ActionButton
               key={stage}
               label={stage.replaceAll("_", " ")}
@@ -378,6 +555,79 @@ function formatAnswer(value: unknown) {
   return String(value)
 }
 
+function isReviewStage(stage: MoveStage): stage is ReviewStage {
+  return REVIEW_STAGES.includes(stage as ReviewStage)
+}
+
+function appendContactInteraction(lead: Lead | null, interaction: LeadContactInteraction) {
+  if (!lead) {
+    return lead
+  }
+
+  const existing = lead.contactInteractions ?? []
+  const nextInteractions = [
+    interaction,
+    ...existing.filter((current) => current.id !== interaction.id)
+  ].slice(0, 5)
+
+  return {
+    ...lead,
+    contactInteractions: nextInteractions
+  }
+}
+
+function resolveContactPhone(lead: Lead | null) {
+  return firstNonEmpty(lead?.buyerPhone, lead?.answers?.contact.phone)
+}
+
+function resolveContactEmail(lead: Lead | null) {
+  return firstNonEmpty(lead?.buyerEmail, lead?.answers?.contact.email)
+}
+
+function firstNonEmpty(...values: Array<string | undefined>) {
+  return values.find((value) => Boolean(value?.trim()))?.trim()
+}
+
+function formatPhoneForNativeUrl(value: string) {
+  const trimmed = value.trim()
+  const digits = trimmed.replace(/\D/g, "")
+
+  if (!digits) {
+    return null
+  }
+
+  return `${trimmed.startsWith("+") ? "+" : ""}${digits}`
+}
+
+function formatContactInteractionLabel(method: ContactMethod) {
+  return method === "call"
+    ? "Attempted call"
+    : method === "text"
+      ? "Attempted text"
+      : "Attempted email"
+}
+
+function formatContactInteractionTime(value: string) {
+  const occurredAt = new Date(value)
+  const now = new Date()
+  const timeLabel = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(occurredAt)
+  const dateLabel =
+    occurredAt.getFullYear() === now.getFullYear() &&
+    occurredAt.getMonth() === now.getMonth() &&
+    occurredAt.getDate() === now.getDate()
+      ? "Today"
+      : new Intl.DateTimeFormat(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric"
+        }).format(occurredAt)
+
+  return `${dateLabel}, ${timeLabel}`
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-CA", {
     dateStyle: "medium",
@@ -409,6 +659,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: mobileTheme.colors.mutedInk
+  },
+  contactActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  contactActionItem: {
+    minWidth: 112,
+    flexGrow: 1
   },
   submitted: {
     fontSize: 14,
@@ -442,6 +701,12 @@ const styles = StyleSheet.create({
   },
   actionStack: {
     gap: 10
+  },
+  historyRow: {
+    gap: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: mobileTheme.colors.border
   },
   answerRow: {
     gap: 4,

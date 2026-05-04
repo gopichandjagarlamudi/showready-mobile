@@ -5,8 +5,13 @@ import type {
   IntakeDraft,
   QuestionDefinition,
   QuestionTemplate
-} from "@showready/contracts"
-import { getOptionalQuestionsForIntent, getRequiredQuestionsForIntent } from "@showready/domain"
+} from "@showready/contracts/intake-public"
+import {
+  getOptionalQuestionsForIntent,
+  getRequiredQuestionsForIntent
+} from "@showready/contracts/intake-public"
+import type { PublicIntakeBranding } from "@/lib/public-intake-branding"
+import { IntakeBrandedShell } from "./intake-branding"
 
 type FlowQuestion = QuestionDefinition & {
   scope: "core" | "custom"
@@ -125,6 +130,7 @@ function getInputType(type: QuestionDefinition["type"]) {
 
 export function IntakeFlow({
   token,
+  branding,
   draft: initialDraft,
   saleTemplate,
   rentalTemplate,
@@ -132,6 +138,7 @@ export function IntakeFlow({
   optionalQuestions
 }: {
   token: string
+  branding: PublicIntakeBranding
   draft: IntakeDraft
   saleTemplate: QuestionTemplate
   rentalTemplate: QuestionTemplate
@@ -141,6 +148,8 @@ export function IntakeFlow({
   const [draft, setDraft] = useState<IntakeDraft>(initialDraft)
   const [index, setIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [website, setWebsite] = useState("")
+  const [guardStartedAt] = useState(() => Date.now())
   const [isPending, startTransition] = useTransition()
 
   const activeTemplate = draft.intent === "rent" ? rentalTemplate : saleTemplate
@@ -234,7 +243,13 @@ export function IntakeFlow({
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ draft: nextDraft })
+          body: JSON.stringify({
+            draft: nextDraft,
+            guard: {
+              startedAt: guardStartedAt,
+              website
+            }
+          })
         }
       )
 
@@ -298,98 +313,40 @@ export function IntakeFlow({
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: "24px",
-        background:
-          "radial-gradient(circle at top left, rgba(31,95,87,0.16), transparent 20%), radial-gradient(circle at bottom right, rgba(183,77,44,0.12), transparent 24%), linear-gradient(180deg, var(--sr-bone-raised), var(--sr-bone))"
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 560,
-          background: "var(--sr-bone-raised)",
-          border: "1px solid var(--sr-border)",
-          borderRadius: 32,
-          padding: 28,
-          boxShadow: "var(--sr-shadow-soft)"
-        }}
-      >
-        <div style={{ marginBottom: 28 }}>
-          <p
-            style={{
-              margin: 0,
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
-              fontSize: 12,
-              color: "var(--sr-cypress)"
-            }}
-          >
-            {activeTemplate.name}
-          </p>
-          <h1
-            style={{
-              fontFamily: "var(--sr-font-display)",
-              fontSize: "2.4rem",
-              lineHeight: 1,
-              marginBottom: 12
-            }}
-          >
-            {activeTemplate.introHeadline}
-          </h1>
-          <p style={{ color: "var(--sr-ink-muted)", lineHeight: 1.6 }}>
-            {activeTemplate.introBody}
-          </p>
+    <IntakeBrandedShell branding={branding}>
+      <div className="intake-header">
+        <p className="intake-eyebrow">{activeTemplate.name}</p>
+        <h1 className="intake-title">{activeTemplate.introHeadline}</h1>
+        <p className="intake-copy">{activeTemplate.introBody}</p>
+        <div className="intake-progress-track">
           <div
+            className="intake-progress-bar"
             style={{
-              marginTop: 20,
-              height: 6,
-              borderRadius: 999,
-              background: "rgba(23,23,23,0.08)"
+              width: `${((index + 1) / steps.length) * 100}%`
             }}
-          >
-            <div
-              style={{
-                width: `${((index + 1) / steps.length) * 100}%`,
-                height: "100%",
-                borderRadius: 999,
-                background: "linear-gradient(90deg, var(--sr-cypress), var(--sr-amber-red))"
-              }}
-            />
-          </div>
+          />
         </div>
+      </div>
 
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            handleAdvance()
-          }}
-          style={{ display: "grid", gap: 18 }}
-        >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          handleAdvance()
+        }}
+        className="intake-form"
+      >
           <div>
-            <p
-              style={{
-                color: "var(--sr-ink-soft)",
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                fontSize: 12,
-                marginBottom: 8
-              }}
-            >
+            <p className="intake-step-label">
               Step {index + 1} of {steps.length}
             </p>
-            <h2 style={{ fontSize: "1.5rem", margin: 0 }}>{current.label}</h2>
+            <h2 className="intake-question">{current.label}</h2>
             {current.helperText ? (
-              <p style={{ color: "var(--sr-ink-muted)" }}>{current.helperText}</p>
+              <p className="intake-copy">{current.helperText}</p>
             ) : null}
           </div>
 
           {current.type === "single_select" ? (
-            <div style={{ display: "grid", gap: 10 }}>
+            <div className="intake-options">
               {current.options?.map((option) => {
                 const isActive = value === option.value
 
@@ -397,15 +354,10 @@ export function IntakeFlow({
                   <button
                     key={option.value}
                     type="button"
-                    onClick={() => setDraft((previous) => setDraftValue(previous, current.key, option.value))}
-                    style={{
-                      borderRadius: 20,
-                      padding: "16px 18px",
-                      border: `1px solid ${isActive ? "var(--sr-cypress)" : "var(--sr-border)"}`,
-                      background: isActive ? "var(--sr-cypress-soft)" : "white",
-                      textAlign: "left",
-                      cursor: "pointer"
-                    }}
+                    onClick={() =>
+                      setDraft((previous) => setDraftValue(previous, current.key, option.value))
+                    }
+                    className={`intake-option${isActive ? " intake-option-active" : ""}`}
                   >
                     {option.label}
                   </button>
@@ -413,7 +365,7 @@ export function IntakeFlow({
               })}
             </div>
           ) : current.type === "multi_select" ? (
-            <div style={{ display: "grid", gap: 10 }}>
+            <div className="intake-options">
               {current.options?.map((option) => {
                 const currentValues = getMultiSelectValues(value)
                 const isActive = currentValues.includes(option.value)
@@ -428,14 +380,7 @@ export function IntakeFlow({
                         : [...currentValues, option.value]
                       setDraft((previous) => setDraftValue(previous, current.key, nextValues))
                     }}
-                    style={{
-                      borderRadius: 20,
-                      padding: "16px 18px",
-                      border: `1px solid ${isActive ? "var(--sr-cypress)" : "var(--sr-border)"}`,
-                      background: isActive ? "var(--sr-cypress-soft)" : "white",
-                      textAlign: "left",
-                      cursor: "pointer"
-                    }}
+                    className={`intake-option${isActive ? " intake-option-active" : ""}`}
                   >
                     {option.label}
                   </button>
@@ -450,13 +395,7 @@ export function IntakeFlow({
               onChange={(event) =>
                 setDraft((previous) => setDraftValue(previous, current.key, event.target.value))
               }
-              style={{
-                width: "100%",
-                borderRadius: 20,
-                border: "1px solid var(--sr-border)",
-                padding: "16px 18px",
-                minHeight: 140
-              }}
+              className="intake-control intake-textarea"
             />
           ) : (
             <input
@@ -468,63 +407,47 @@ export function IntakeFlow({
               onChange={(event) =>
                 setDraft((previous) => setDraftValue(previous, current.key, event.target.value))
               }
-              style={{
-                width: "100%",
-                borderRadius: 20,
-                border: "1px solid var(--sr-border)",
-                padding: "16px 18px"
-              }}
+              className="intake-control"
             />
           )}
 
+          <input
+            type="text"
+            name="website"
+            value={website}
+            onChange={(event) => setWebsite(event.target.value)}
+            tabIndex={-1}
+            autoComplete="off"
+            className="intake-honeypot"
+            aria-hidden="true"
+          />
+
           {error ? (
-            <div
-              style={{
-                padding: "14px 16px",
-                borderRadius: 18,
-                background: "var(--sr-amber-red-soft)",
-                color: "var(--sr-amber-red)"
-              }}
-            >
-              {error}
-            </div>
+            <div className="intake-error">{error}</div>
           ) : null}
 
-          <div style={{ display: "flex", gap: 12 }}>
-            <button
-              type="submit"
-              disabled={isPending}
-              style={{
-                flex: 1,
-                border: 0,
-                borderRadius: 999,
-                padding: "16px 18px",
-                color: "white",
-                background: "linear-gradient(90deg, var(--sr-cypress), var(--sr-amber-red))",
-                cursor: "pointer"
-              }}
-            >
-              {isPending ? (isLastStep ? "Submitting..." : "Saving...") : isLastStep ? "Submit" : "Continue"}
+          <div className="intake-actions">
+            <button type="submit" disabled={isPending} className="intake-primary">
+              {isPending
+                ? isLastStep
+                  ? "Submitting..."
+                  : "Saving..."
+                : isLastStep
+                  ? "Submit"
+                  : "Continue"}
             </button>
             {!current.required ? (
               <button
                 type="button"
                 onClick={handleSkip}
                 disabled={isPending}
-                style={{
-                  borderRadius: 999,
-                  border: "1px solid var(--sr-border)",
-                  background: "white",
-                  padding: "16px 18px",
-                  cursor: "pointer"
-                }}
+                className="intake-secondary"
               >
                 Skip
               </button>
             ) : null}
           </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </IntakeBrandedShell>
   )
 }

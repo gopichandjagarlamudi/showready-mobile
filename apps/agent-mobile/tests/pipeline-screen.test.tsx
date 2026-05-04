@@ -1,5 +1,30 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native"
+import type { PipelineLead, PipelineLeadListResponse } from "@showready/contracts"
 import PipelineScreen from "../app/(app)/pipeline"
+
+jest.mock(
+  "@react-native-community/datetimepicker",
+  () => {
+    const React = require("react")
+    const { Pressable, Text } = require("react-native")
+
+    return function MockDateTimePicker(props: {
+      mode: "date" | "time"
+      onChange: (event: { type: string }, date?: Date) => void
+      testID?: string
+    }) {
+      return React.createElement(
+        Pressable,
+        {
+          testID: props.testID,
+          onPress: () => props.onChange({ type: "set" }, new Date(2026, 3, 22, 9, 0))
+        },
+        React.createElement(Text, null, props.mode)
+      )
+    }
+  },
+  { virtual: true }
+)
 
 jest.mock("../providers/session-provider", () => ({
   useSession: jest.fn(),
@@ -17,7 +42,28 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
   useMobileApi: jest.Mock
 }
 
+function pipelineLead(input: Partial<PipelineLead> & Pick<PipelineLead, "id" | "buyerName">): PipelineLead {
+  return {
+    id: input.id,
+    agentId: "agent-1",
+    intakeType: "sale",
+    buyerName: input.buyerName,
+    buyerEmail: input.buyerEmail ?? `${input.id}@example.com`,
+    status: "submitted",
+    pipelineStage: input.pipelineStage ?? "ready_to_show",
+    submittedAt: input.submittedAt ?? "2026-04-20T12:00:00.000Z",
+    score: input.score ?? 8.4,
+    recommendation: input.recommendation ?? "show",
+    summary: input.summary ?? "Ready to tour.",
+    createdAt: input.createdAt ?? "2026-04-20T12:00:00.000Z",
+    updatedAt: input.updatedAt ?? "2026-04-22T12:00:00.000Z",
+    lastMovementAt: input.lastMovementAt ?? "2026-04-22T12:00:00.000Z",
+    attentionReason: input.attentionReason
+  }
+}
+
 describe("PipelineScreen", () => {
+  let listPipelineLeads: jest.Mock<Promise<PipelineLeadListResponse>, [Record<string, unknown>]>
   let moveLead: jest.Mock
 
   beforeEach(() => {
@@ -26,250 +72,146 @@ describe("PipelineScreen", () => {
         user: {
           id: "agent-1"
         }
-      }
+      },
+      workspaceVersion: 0
     })
 
     moveLead = jest.fn(async (leadId: string, stage: string) => ({
       lead: {
-        id: leadId,
-        agentId: "agent-1",
-        buyerName: "Riley Ready",
-        buyerEmail: "riley@example.com",
-        token: "invite-ready",
-        tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-        status: "submitted",
-        pipelineStage: stage,
-        submittedAt: "2026-04-20T12:00:00.000Z",
-        recommendation: "show",
-        summary: "Ready to tour.",
-        createdAt: "2026-04-20T12:00:00.000Z",
-        updatedAt: "2026-04-20T12:00:00.000Z"
+        ...pipelineLead({ id: leadId, buyerName: "Riley Ready" }),
+        pipelineStage: stage
       }
     }))
 
-    useMobileApi.mockReturnValue({
-      listLeads: jest.fn(async () => [
-        {
-          id: "lead-ready",
-          agentId: "agent-1",
-          buyerName: "Riley Ready",
-          buyerEmail: "riley@example.com",
-          token: "invite-ready",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "submitted",
-          pipelineStage: "ready_to_show",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "show",
-          summary: "Ready to tour.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-booked",
-          agentId: "agent-1",
-          buyerName: "Avery Booked",
-          buyerEmail: "avery@example.com",
-          token: "invite-booked",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "submitted",
-          pipelineStage: "appointment_booked",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "show",
-          summary: "Showing booked but still a ready lead.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z",
-          review: {
-            suggestedStage: "ready_to_show",
-            reviewedStage: "ready_to_show",
-            isReviewed: true,
-            isOverride: false
-          }
-        },
-        {
-          id: "lead-nurture",
-          agentId: "agent-1",
-          buyerName: "Nico Nurture",
-          buyerEmail: "nico@example.com",
-          token: "invite-nurture",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "submitted",
-          pipelineStage: "nurture",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "nurture",
-          summary: "Needs follow-up.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-hold",
-          agentId: "agent-1",
-          buyerName: "Harper Hold",
-          buyerEmail: "harper@example.com",
-          token: "invite-hold",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "submitted",
-          pipelineStage: "hold",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "hold",
-          summary: "Waiting on financing.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-won",
-          agentId: "agent-1",
-          buyerName: "Casey Won",
-          buyerEmail: "casey@example.com",
-          token: "invite-won",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "submitted",
-          pipelineStage: "closed_won",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "show",
-          summary: "Deal closed.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-lost",
-          agentId: "agent-1",
-          buyerName: "Logan Lost",
-          buyerEmail: "logan@example.com",
-          token: "invite-lost",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "submitted",
-          pipelineStage: "closed_lost",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "nurture",
-          summary: "Chose another property.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
-        },
-        {
-          id: "lead-archived",
-          agentId: "agent-1",
-          buyerName: "Sky Archived",
-          buyerEmail: "sky@example.com",
-          token: "invite-archived",
-          tokenExpiresAt: "2026-04-27T00:00:00.000Z",
-          status: "archived",
-          pipelineStage: "archived",
-          submittedAt: "2026-04-20T12:00:00.000Z",
-          recommendation: "hold",
-          summary: "Archived.",
-          createdAt: "2026-04-20T12:00:00.000Z",
-          updatedAt: "2026-04-20T12:00:00.000Z"
+    listPipelineLeads = jest.fn(async (input: Record<string, unknown>) => {
+      if (input.offset === 25) {
+        return {
+          leads: [
+            pipelineLead({
+              id: "lead-page-2",
+              buyerName: "Jordan Later",
+              attentionReason: "Recently reviewed active lead."
+            })
+          ],
+          total: 26,
+          mode: "filtered_results" as const,
+          summaryLabel: "26 active leads"
         }
-      ]),
+      }
+
+      return {
+        leads: [
+          pipelineLead({
+            id: "lead-ready",
+            buyerName: "Riley Ready",
+            attentionReason: "Ready to show with no appointment scheduled."
+          })
+        ],
+        total: 26,
+        nextOffset: 25,
+        mode: "focus_queue" as const,
+        summaryLabel: "Top 25 of 1,248 active leads"
+      }
+    })
+
+    useMobileApi.mockReturnValue({
+      listPipelineLeads,
       moveLead
     })
   })
 
-  it("filters leads through the category picker instead of rendering every section inline", async () => {
+  it("loads the server-ranked attention queue and appends the next page on request", async () => {
     const screen = render(<PipelineScreen />)
 
-    expect(
-      screen.queryByText(
-        "Search the current lane, switch categories from one mobile-friendly picker, and keep stage moves close to the lead card."
+    expect(await screen.findByText("Top 25 of 1,248 active leads")).toBeTruthy()
+    expect(screen.getByText("Ready to show with no appointment scheduled.")).toBeTruthy()
+    expect(listPipelineLeads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tab: "active",
+        category: "all",
+        limit: 25,
+        offset: 0
+      })
+    )
+
+    fireEvent.press(screen.getByTestId("pipeline-load-more"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-card-lead-page-2")).toBeTruthy()
+    })
+    expect(screen.getByTestId("pipeline-card-lead-ready")).toBeTruthy()
+    expect(listPipelineLeads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        offset: 25
+      })
+    )
+  })
+
+  it("applies stage filters through the filter sheet", async () => {
+    const screen = render(<PipelineScreen />)
+
+    expect(await screen.findByTestId("pipeline-filter-button")).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("pipeline-filter-button"))
+    fireEvent.press(screen.getByTestId("pipeline-stage-option-nurture"))
+    fireEvent.press(screen.getByTestId("pipeline-filter-apply"))
+
+    await waitFor(() => {
+      expect(listPipelineLeads).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: "nurture",
+          offset: 0
+        })
       )
-    ).toBeNull()
-    expect(screen.queryByText("Find a lead fast")).toBeNull()
-    expect(
-      screen.queryByText(
-        "Search the visible pipeline and narrow it to a single category before you open cards."
-      )
-    ).toBeNull()
-    expect(screen.queryByText("See every active lane in one searchable mobile list.")).toBeNull()
-    expect(screen.queryByText("Showing 4 active leads.")).toBeNull()
+    })
+  })
+
+  it("reloads the current pipeline after moving a lead within the same view", async () => {
+    const screen = render(<PipelineScreen />)
 
     expect(await screen.findByTestId("pipeline-card-lead-ready")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-card-lead-booked")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-card-lead-nurture")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-card-lead-hold")).toBeTruthy()
-    expect(screen.queryByTestId("pipeline-card-lead-won")).toBeNull()
-
-    fireEvent.press(screen.getByTestId("pipeline-open-category-sheet"))
-    expect(screen.getByTestId("pipeline-category-sheet")).toBeTruthy()
-    expect(screen.queryByText("Pick one lane to keep the list short and thumb-friendly on mobile.")).toBeNull()
-    expect(screen.queryByText("Only nurture leads stay in view.")).toBeNull()
-
-    fireEvent.press(screen.getByTestId("pipeline-category-option-nurture"))
-
-    await waitFor(() => {
-      expect(screen.getByTestId("pipeline-card-lead-nurture")).toBeTruthy()
-    })
-    expect(screen.queryByTestId("pipeline-card-lead-ready")).toBeNull()
-    expect(screen.queryByTestId("pipeline-card-lead-booked")).toBeNull()
-    expect(screen.queryByTestId("pipeline-card-lead-hold")).toBeNull()
-
-    fireEvent.press(screen.getByTestId("pipeline-tab-resolved"))
-
-    await waitFor(() => {
-      expect(screen.getByTestId("pipeline-card-lead-won")).toBeTruthy()
-    })
-    expect(screen.getByTestId("pipeline-card-lead-lost")).toBeTruthy()
-    expect(screen.getByTestId("pipeline-card-lead-archived")).toBeTruthy()
-    expect(screen.queryByTestId("pipeline-card-lead-nurture")).toBeNull()
-
-    fireEvent.press(screen.getByTestId("pipeline-open-category-sheet"))
-    fireEvent.press(screen.getByTestId("pipeline-category-option-archived"))
-
-    await waitFor(() => {
-      expect(screen.getByTestId("pipeline-card-lead-archived")).toBeTruthy()
-    })
-    expect(screen.queryByTestId("pipeline-card-lead-won")).toBeNull()
-    expect(screen.queryByTestId("pipeline-card-lead-lost")).toBeNull()
-  })
-
-  it("filters the visible pipeline list with search and shows a helpful empty state", async () => {
-    const screen = render(<PipelineScreen />)
-
-    expect(await screen.findByTestId("pipeline-search-input")).toBeTruthy()
-
-    fireEvent.changeText(screen.getByTestId("pipeline-search-input"), "avery")
-
-    await waitFor(() => {
-      expect(screen.getByTestId("pipeline-card-lead-booked")).toBeTruthy()
-    })
-    expect(screen.queryByTestId("pipeline-card-lead-ready")).toBeNull()
-    expect(screen.queryByTestId("pipeline-card-lead-nurture")).toBeNull()
-
-    fireEvent.changeText(screen.getByTestId("pipeline-search-input"), "missing")
-
-    await waitFor(() => {
-      expect(screen.getByText("No leads match this search yet.")).toBeTruthy()
-    })
-    expect(screen.getByText("Try a name, email, phone number, or a broader category.")).toBeTruthy()
-
-    fireEvent.press(screen.getByTestId("pipeline-clear-empty-search"))
-
-    await waitFor(() => {
-      expect(screen.getByTestId("pipeline-card-lead-ready")).toBeTruthy()
-    })
-  })
-
-  it("opens a stage picker instead of rendering all move actions inline", async () => {
-    const screen = render(<PipelineScreen />)
-
-    expect(await screen.findByTestId("pipeline-open-stage-sheet-lead-ready")).toBeTruthy()
-    expect(screen.queryByTestId("pipeline-move-lead-ready-ready_to_show")).toBeNull()
 
     fireEvent.press(screen.getByTestId("pipeline-open-stage-sheet-lead-ready"))
-
-    expect(screen.getByTestId("pipeline-stage-sheet")).toBeTruthy()
-    expect(screen.queryByText("Keep stage changes contextual instead of crowding every card.")).toBeNull()
-    expect(screen.getByTestId("pipeline-move-lead-ready-closed_won")).toBeTruthy()
-
-    fireEvent.press(screen.getByTestId("pipeline-move-lead-ready-closed_won"))
+    fireEvent.press(screen.getByTestId("pipeline-move-lead-ready-nurture"))
 
     await waitFor(() => {
-      expect(moveLead).toHaveBeenCalledWith("lead-ready", "closed_won")
+      expect(moveLead).toHaveBeenCalledWith("lead-ready", "nurture")
+      expect(listPipelineLeads).toHaveBeenCalledTimes(2)
     })
+    expect(screen.getByTestId("pipeline-card-lead-ready")).toBeTruthy()
+  })
+
+  it("applies submitted-date presets and native picker dates as API ranges", async () => {
+    const screen = render(<PipelineScreen />)
+
+    expect(await screen.findByTestId("pipeline-filter-button")).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("pipeline-filter-button"))
+    fireEvent.press(screen.getByTestId("pipeline-date-preset-yesterday"))
+    fireEvent.press(screen.getByTestId("pipeline-filter-apply"))
 
     await waitFor(() => {
-      expect(screen.queryByTestId("pipeline-card-lead-ready")).toBeNull()
+      expect(listPipelineLeads).toHaveBeenCalledWith(
+        expect.objectContaining({
+          submittedFrom: expect.any(String),
+          submittedTo: expect.any(String),
+          offset: 0
+        })
+      )
     })
 
-    expect(screen.getByText("Moved Riley Ready to closed won.")).toBeTruthy()
+    fireEvent.press(screen.getByTestId("pipeline-filter-button"))
+    fireEvent.press(screen.getByTestId("pipeline-date-preset-pick_date"))
+    fireEvent.press(screen.getByTestId("pipeline-native-date-picker"))
+    fireEvent.press(screen.getByTestId("pipeline-filter-apply"))
+
+    await waitFor(() => {
+      expect(listPipelineLeads).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          submittedFrom: expect.stringContaining("2026-04-22"),
+          submittedTo: expect.any(String)
+        })
+      )
+    })
   })
 })

@@ -1,5 +1,5 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native"
-import type { Lead } from "@showready/contracts"
+import type { Lead, LeadListResponse } from "@showready/contracts"
 import NewLeadsScreen from "../app/(app)/new-leads"
 
 jest.mock("../providers/session-provider", () => ({
@@ -43,7 +43,10 @@ describe("NewLeadsScreen", () => {
     }
   }
   const api = {
-    listNewLeads: jest.fn<Promise<Lead[]>, [string]>(async () => []),
+    listNewLeads: jest.fn(async (): Promise<LeadListResponse> => ({
+      leads: [] as Lead[],
+      total: 0
+    })),
     reviewLead: jest.fn(async (leadId: string, stage: string) => ({
       lead: {
         id: leadId,
@@ -100,7 +103,10 @@ describe("NewLeadsScreen", () => {
   })
 
   it("refreshes the shared workspace badge state after a lead review succeeds", async () => {
-    api.listNewLeads.mockResolvedValueOnce([reviewQueueLead])
+    api.listNewLeads.mockResolvedValueOnce({
+      leads: [reviewQueueLead],
+      total: 1
+    })
 
     const screen = render(<NewLeadsScreen />)
 
@@ -112,6 +118,38 @@ describe("NewLeadsScreen", () => {
 
     await waitFor(() => {
       expect(refreshWorkspace).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it("loads the review queue in pages and appends the next page", async () => {
+    api.listNewLeads
+      .mockResolvedValueOnce({
+        leads: [reviewQueueLead],
+        total: 2,
+        nextOffset: 25
+      })
+      .mockResolvedValueOnce({
+        leads: [
+          {
+            ...reviewQueueLead,
+            id: "lead-next",
+            buyerName: "Jordan Later"
+          }
+        ],
+        total: 2
+      })
+
+    const screen = render(<NewLeadsScreen />)
+
+    expect(await screen.findByTestId("new-lead-card-lead-ready")).toBeTruthy()
+    fireEvent.press(screen.getByTestId("new-leads-load-more"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("new-lead-card-lead-next")).toBeTruthy()
+    })
+    expect(api.listNewLeads).toHaveBeenCalledWith({
+      limit: 25,
+      offset: 25
     })
   })
 })

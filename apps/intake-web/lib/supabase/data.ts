@@ -1,16 +1,33 @@
 import "server-only"
 
 import { randomUUID } from "node:crypto"
+import { unstable_cache } from "next/cache"
 import type { User, SupabaseClient } from "@supabase/supabase-js"
 import type {
   AgentSettings,
+  AppointmentListQuery,
+  AppointmentListResponse,
+  AppointmentStatus,
+  AuditEvent,
+  ContactMethod,
+  ConsentRecord,
   CustomQuestion,
+  DashboardSummary,
   IntakeDraft,
   IntakeSubmission,
   IntakeType,
   Lead,
+  LeadContactInteraction,
+  LeadListQuery,
+  LeadListResponse,
   LeadStage,
+  PipelineLead,
+  PipelineLeadListQuery,
+  PipelineLeadListResponse,
+  ProductEvent,
+  QuestionTemplate,
   Recommendation,
+  ScoreBreakdown,
   ScoreOverride
 } from "@showready/contracts"
 import {
@@ -34,11 +51,35 @@ import {
   mapAgentSettings,
   mapAppointment,
   mapInviteRecord,
+  mapLeadContactInteractionRecord,
   mapLeadRecord,
   mapQuestionTemplate
 } from "@showready/infrastructure"
+import {
+  buildPublicIntakeBranding,
+  type PublicIntakeBranding
+} from "../public-intake-branding"
+import { createSupabaseAdminClient } from "./admin"
+import {
+  buildFocusQueue,
+  getPipelineDisplayStage,
+  isLeadInCategory,
+  isLeadInTab,
+  prioritizeActivePipelineLeads,
+  toPipelineLead,
+  type ScheduledAppointmentSummary
+} from "./pipeline"
 
 type AppSupabaseClient = SupabaseClient<any>
+
+const PIPELINE_ACTIVE_STAGES = ["ready_to_show", "appointment_booked", "nurture", "hold"]
+const PIPELINE_RESOLVED_STAGES = ["closed_won", "closed_lost", "archived"]
+const APPOINTMENT_ELIGIBLE_STAGES = ["ready_to_show", "nurture", "hold"]
+const LEAD_LIST_COLUMNS =
+  "id, agent_id, intake_type, buyer_name, buyer_phone, buyer_email, token, token_expires_at, status, pipeline_stage, submitted_at, score, recommendation, summary, created_at, updated_at, reviewed_at, reviewed_stage"
+const APPOINTMENT_LIST_COLUMNS =
+  "id, lead_id, date, start_time, status, notes, created_at, leads!inner(id, buyer_name, buyer_phone, buyer_email, pipeline_stage)"
+const LEAD_CONTACT_INTERACTION_COLUMNS = "id, lead_id, agent_id, method, occurred_at"
 
 type OnboardingInput = {
   intakeType: IntakeType
@@ -59,8 +100,63 @@ type SubmitInviteInput = {
   draft: IntakeDraft
 }
 
+export type OutboxJobType =
+  | "intake.submitted.product_event"
+  | "intake.submitted.push_notifications"
+  | "intake.submitted.email"
+  | "intake.submitted.analytics"
+
+type OutboxJobInput = {
+  jobType: OutboxJobType
+  resourceType: "lead"
+  resourceId: string
+  payload: Record<string, unknown>
+}
+
+export type OutboxJob = {
+  id: string
+  agentId: string
+  jobType: OutboxJobType
+  resourceType: string
+  resourceId: string
+  payload: Record<string, unknown>
+  status: "pending" | "processing" | "failed" | "completed" | "dead"
+  attemptCount: number
+  maxAttempts: number
+}
+
+export type RetentionCleanupResult = {
+  targetTable: string
+  deletedCount: number
+}
+
+export type PublicFormConfig = {
+  branding: PublicIntakeBranding
+  settings?: Pick<AgentSettings, "brandName" | "brandColor" | "accentColor">
+  templates: {
+    sale: QuestionTemplate
+    rental: QuestionTemplate
+  }
+}
+
+type PublicFormConfigLoader = (agentId: string) => Promise<PublicFormConfig>
+
 function nowIso() {
   return new Date().toISOString()
+}
+
+function mapOutboxJob(row: any): OutboxJob {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    jobType: row.job_type,
+    resourceType: row.resource_type,
+    resourceId: row.resource_id,
+    payload: row.payload ?? {},
+    status: row.status,
+    attemptCount: row.attempt_count ?? 0,
+    maxAttempts: row.max_attempts ?? 5
+  }
 }
 
 function requireData<T>(value: T | null | undefined, message: string): T {
@@ -264,7 +360,8 @@ export async function registerAgentPushToken(
       agent_id: agentId,
       expo_push_token: input.expoPushToken,
       platform: input.platform,
-      last_seen_at: nowIso()
+      last_seen_at: nowIso(),
+      updated_at: nowIso()
     },
     {
       onConflict: "agent_id,expo_push_token"
@@ -278,34 +375,617 @@ export async function registerAgentPushToken(
   return { ok: true as const }
 }
 
-export async function listLeads(client: AppSupabaseClient, agentId: string) {
+export async function enqueueOutboxJobs(
+  client: AppSupabaseClient,
+  agentId: string,
+  jobs: OutboxJobInput[]
+) {
+  if (jobs.length === 0) {
+    return []
+  }
+
+  const rows = jobs.map((job) => ({
+    id: randomUUID(),
+    dedupe_key: `${agentId}:${job.jobType}:${job.resourceType}:${job.resourceId}`,
+    agent_id: agentId,
+    job_type: job.jobType,
+    resource_type: job.resourceType,
+    resource_id: job.resourceId,
+    payload: job.payload,
+    status: "pending",
+    available_at: nowIso(),
+    updated_at: nowIso()
+  }))
+
   const { data, error } = await client
-    .from("leads")
+    .from("outbox_jobs")
+    .upsert(rows, {
+      onConflict: "dedupe_key",
+      ignoreDuplicates: true
+    })
     .select("*")
-    .eq("agent_id", agentId)
-    .order("updated_at", { ascending: false })
 
   if (error) {
     throw error
   }
 
-  return (data ?? []).map((row: any) => mapLeadRecord(row))
+  return (data ?? []).map((row: any) => mapOutboxJob(row))
+}
+
+export async function claimOutboxJobs(client: AppSupabaseClient, limit = 10) {
+  const { data, error } = await client.rpc("claim_outbox_jobs", {
+    p_limit: Math.max(1, Math.min(limit, 25))
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).map((row: any) => mapOutboxJob(row))
+}
+
+export async function claimRelatedPushNotificationJobs(
+  client: AppSupabaseClient,
+  agentId: string,
+  excludedJobIds: string[],
+  limit = 50
+) {
+  if (limit <= 0) {
+    return []
+  }
+
+  const { data, error } = await client.rpc("claim_agent_push_notification_jobs", {
+    p_agent_id: agentId,
+    p_excluded_job_ids: excludedJobIds,
+    p_limit: Math.max(1, Math.min(limit, 50))
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).map((row: any) => mapOutboxJob(row))
+}
+
+export async function completeOutboxJob(client: AppSupabaseClient, jobId: string) {
+  const { error } = await client
+    .from("outbox_jobs")
+    .update({
+      status: "completed",
+      completed_at: nowIso(),
+      updated_at: nowIso()
+    })
+    .eq("id", jobId)
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function failOutboxJob(
+  client: AppSupabaseClient,
+  job: OutboxJob,
+  errorMessage: string
+) {
+  const shouldStopRetrying = job.attemptCount >= job.maxAttempts
+  const retryDelayMs = Math.min(job.attemptCount * 60_000, 10 * 60_000)
+
+  const { error } = await client
+    .from("outbox_jobs")
+    .update({
+      status: shouldStopRetrying ? "dead" : "failed",
+      last_error: errorMessage.slice(0, 2000),
+      available_at: shouldStopRetrying
+        ? null
+        : new Date(Date.now() + retryDelayMs).toISOString(),
+      updated_at: nowIso()
+    })
+    .eq("id", job.id)
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function runRetentionCleanup(
+  client: AppSupabaseClient
+): Promise<RetentionCleanupResult[]> {
+  const { data, error } = await client.rpc("cleanup_showready_retention")
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).map((row: any) => ({
+    targetTable: row.target_table,
+    deletedCount: Number(row.deleted_count ?? 0)
+  }))
+}
+
+export async function listLeads(
+  client: AppSupabaseClient,
+  agentId: string,
+  input: LeadListQuery = {
+    scope: "all",
+    limit: 25,
+    offset: 0
+  }
+): Promise<LeadListResponse> {
+  let queryBuilder = client
+    .from("leads")
+    .select(LEAD_LIST_COLUMNS, { count: "exact" })
+    .eq("agent_id", agentId)
+
+  if (input.scope === "new") {
+    queryBuilder = queryBuilder
+      .eq("status", "submitted")
+      .eq("pipeline_stage", "new")
+      .order("submitted_at", { ascending: false })
+  } else if (input.scope === "appointment_eligible") {
+    queryBuilder = queryBuilder
+      .in("pipeline_stage", APPOINTMENT_ELIGIBLE_STAGES)
+      .order("updated_at", { ascending: false })
+  } else {
+    queryBuilder = queryBuilder.order("updated_at", { ascending: false })
+  }
+
+  queryBuilder = applySearchFilter(queryBuilder, input.query).range(
+    input.offset,
+    input.offset + input.limit - 1
+  )
+
+  const { data, error, count } = await queryBuilder
+
+  if (error) {
+    throw error
+  }
+
+  const leads = (data ?? []).map((row: any) => mapLeadRecord(row))
+  const total = count ?? leads.length
+
+  return {
+    leads,
+    total,
+    nextOffset: withNextOffset({
+      total,
+      offset: input.offset,
+      limit: input.limit,
+      visibleCount: leads.length
+    })
+  }
 }
 
 export async function listNewLeadsForReview(client: AppSupabaseClient, agentId: string) {
+  const page = await listLeads(client, agentId, {
+    scope: "new",
+    limit: 25,
+    offset: 0
+  })
+
+  return page.leads
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("en-US").format(value)
+}
+
+function formatSubmittedDateLabel(value?: string) {
+  if (!value) {
+    return undefined
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric"
+  }).format(new Date(value))
+}
+
+function formatApiDate(value: Date) {
+  const year = value.getUTCFullYear()
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(value.getUTCDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next
+}
+
+function activeStagesForQuery(tab: PipelineLeadListQuery["tab"]) {
+  return tab === "active" ? PIPELINE_ACTIVE_STAGES : PIPELINE_RESOLVED_STAGES
+}
+
+function pipelineStagesForQuery(
+  tab: PipelineLeadListQuery["tab"],
+  category: PipelineLeadListQuery["category"]
+) {
+  if (category === "all") {
+    return activeStagesForQuery(tab)
+  }
+
+  if (tab === "active") {
+    return category === "ready_to_show" || category === "nurture" || category === "hold"
+      ? [category, "appointment_booked"]
+      : []
+  }
+
+  return category === "closed_won" || category === "closed_lost" || category === "archived"
+    ? [category]
+    : []
+}
+
+function makeSummaryLabel(input: {
+  mode: PipelineLeadListResponse["mode"]
+  total: number
+  visibleCount: number
+  submittedFrom?: string
+  tab: PipelineLeadListQuery["tab"]
+}) {
+  const submittedLabel = formatSubmittedDateLabel(input.submittedFrom)
+
+  if (submittedLabel) {
+    return `Submitted ${submittedLabel} · ${formatCount(input.total)} shown`
+  }
+
+  if (input.mode === "focus_queue") {
+    return `Top ${input.visibleCount} of ${formatCount(input.total)} active leads`
+  }
+
+  return `${formatCount(input.total)} ${input.tab} leads`
+}
+
+function applySearchFilter(queryBuilder: any, searchQuery?: string) {
+  if (!searchQuery) {
+    return queryBuilder
+  }
+
+  const escaped = searchQuery.replaceAll("%", "\\%").replaceAll("_", "\\_")
+  return queryBuilder.or(
+    [
+      `buyer_name.ilike.%${escaped}%`,
+      `buyer_email.ilike.%${escaped}%`,
+      `buyer_phone.ilike.%${escaped}%`,
+      `summary.ilike.%${escaped}%`,
+      `recommendation.ilike.%${escaped}%`
+    ].join(",")
+  )
+}
+
+function withNextOffset(input: {
+  total: number
+  offset: number
+  limit: number
+  visibleCount: number
+}) {
+  const nextOffset = input.offset + input.visibleCount
+  return nextOffset < input.total ? nextOffset : undefined
+}
+
+async function listScheduledAppointmentSummaries(
+  client: AppSupabaseClient,
+  leadIds: string[]
+) {
+  if (leadIds.length === 0) {
+    return new Map<string, ScheduledAppointmentSummary>()
+  }
+
   const { data, error } = await client
-    .from("leads")
-    .select("*")
-    .eq("agent_id", agentId)
-    .eq("status", "submitted")
-    .eq("pipeline_stage", "new")
-    .order("submitted_at", { ascending: false })
+    .from("appointments")
+    .select("lead_id, date, start_time")
+    .eq("status", "scheduled")
+    .in("lead_id", leadIds)
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true })
 
   if (error) {
     throw error
   }
 
-  return (data ?? []).map((row: any) => mapLeadRecord(row))
+  const appointmentsByLeadId = new Map<string, ScheduledAppointmentSummary>()
+
+  for (const appointment of data ?? []) {
+    if (!appointmentsByLeadId.has(appointment.lead_id)) {
+      appointmentsByLeadId.set(appointment.lead_id, {
+        date: appointment.date,
+        startTime: appointment.start_time
+      })
+    }
+  }
+
+  return appointmentsByLeadId
+}
+
+async function listUpcomingAppointmentSummaries(
+  client: AppSupabaseClient,
+  agentId: string
+) {
+  const today = new Date()
+  const { data, error } = await client
+    .from("appointments")
+    .select("lead_id, date, start_time")
+    .eq("status", "scheduled")
+    .eq("agent_id", agentId)
+    .gte("date", formatApiDate(today))
+    .lte("date", formatApiDate(addDays(today, 7)))
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true })
+    .limit(75)
+
+  if (error) {
+    throw error
+  }
+
+  const appointmentsByLeadId = new Map<string, ScheduledAppointmentSummary>()
+
+  for (const appointment of data ?? []) {
+    if (!appointmentsByLeadId.has(appointment.lead_id)) {
+      appointmentsByLeadId.set(appointment.lead_id, {
+        date: appointment.date,
+        startTime: appointment.start_time
+      })
+    }
+  }
+
+  return appointmentsByLeadId
+}
+
+async function listLatestLeadContactInteractions(
+  client: AppSupabaseClient,
+  agentId: string,
+  leadIds: string[]
+): Promise<Map<string, LeadContactInteraction>> {
+  if (leadIds.length === 0) {
+    return new Map()
+  }
+
+  const { data, error } = await client
+    .from("lead_contact_interactions")
+    .select(LEAD_CONTACT_INTERACTION_COLUMNS)
+    .eq("agent_id", agentId)
+    .in("lead_id", leadIds)
+    .order("occurred_at", { ascending: false })
+
+  if (error) {
+    if (isMissingRelationError(error, "lead_contact_interactions")) {
+      return new Map()
+    }
+
+    throw error
+  }
+
+  const latestByLeadId = new Map<string, LeadContactInteraction>()
+
+  for (const row of data ?? []) {
+    if (latestByLeadId.has(row.lead_id)) {
+      continue
+    }
+
+    latestByLeadId.set(row.lead_id, mapLeadContactInteractionRecord(row))
+  }
+
+  return latestByLeadId
+}
+
+async function loadPipelineFocusCandidates(
+  client: AppSupabaseClient,
+  agentId: string
+) {
+  const upcomingAppointmentsByLeadId = await listUpcomingAppointmentSummaries(client, agentId)
+  const appointmentLeadIds = Array.from(upcomingAppointmentsByLeadId.keys())
+  const [{ data: activeRows, error: activeError }, appointmentLeadContext] = await Promise.all([
+    client
+      .from("leads")
+      .select("*")
+      .eq("agent_id", agentId)
+      .in("pipeline_stage", PIPELINE_ACTIVE_STAGES)
+      .order("updated_at", { ascending: false })
+      .limit(250),
+    appointmentLeadIds.length > 0
+      ? client
+          .from("leads")
+          .select("*")
+          .eq("agent_id", agentId)
+          .in("id", appointmentLeadIds)
+      : Promise.resolve({ data: [], error: null })
+  ])
+
+  if (activeError) {
+    throw activeError
+  }
+
+  if (appointmentLeadContext.error) {
+    throw appointmentLeadContext.error
+  }
+
+  const leadMap = new Map<string, PipelineLead>()
+
+  for (const row of [...(activeRows ?? []), ...(appointmentLeadContext.data ?? [])]) {
+    const pipelineLead = toPipelineLead(mapLeadRecord(row))
+    if (isLeadInTab(pipelineLead, "active")) {
+      leadMap.set(pipelineLead.id, pipelineLead)
+    }
+  }
+
+  return {
+    candidates: Array.from(leadMap.values()),
+    upcomingAppointmentsByLeadId
+  }
+}
+
+async function countPipelineRows(
+  client: AppSupabaseClient,
+  agentId: string,
+  tab: PipelineLeadListQuery["tab"]
+) {
+  const { count, error } = await client
+    .from("leads")
+    .select("id", { count: "exact", head: true })
+    .eq("agent_id", agentId)
+    .in("pipeline_stage", activeStagesForQuery(tab))
+
+  if (error) {
+    throw error
+  }
+
+  return count ?? 0
+}
+
+export async function listPipelineLeads(
+  client: AppSupabaseClient,
+  agentId: string,
+  input: PipelineLeadListQuery
+): Promise<PipelineLeadListResponse> {
+  const hasSearch = Boolean(input.query)
+  const hasSubmittedFilter = Boolean(input.submittedFrom || input.submittedTo)
+  const isFocusQueue =
+    input.tab === "active" &&
+    input.category === "all" &&
+    !hasSearch &&
+    !hasSubmittedFilter &&
+    input.offset === 0
+
+  if (isFocusQueue) {
+    const [{ candidates, upcomingAppointmentsByLeadId }, total] = await Promise.all([
+      loadPipelineFocusCandidates(client, agentId),
+      countPipelineRows(client, agentId, "active")
+    ])
+    const latestContactInteractionsByLeadId = await listLatestLeadContactInteractions(
+      client,
+      agentId,
+      candidates.map((lead) => lead.id)
+    )
+    const leads = buildFocusQueue(
+      candidates,
+      upcomingAppointmentsByLeadId,
+      latestContactInteractionsByLeadId,
+      new Date(),
+      input.limit
+    )
+
+    return {
+      leads,
+      total,
+      mode: "focus_queue",
+      summaryLabel: makeSummaryLabel({
+        mode: "focus_queue",
+        total,
+        visibleCount: leads.length,
+        tab: input.tab
+      })
+    }
+  }
+
+  const queryStages = pipelineStagesForQuery(input.tab, input.category)
+  if (queryStages.length === 0) {
+    return {
+      leads: [],
+      total: 0,
+      mode: "filtered_results",
+      summaryLabel: makeSummaryLabel({
+        mode: "filtered_results",
+        total: 0,
+        visibleCount: 0,
+        submittedFrom: input.submittedFrom,
+        tab: input.tab
+      })
+    }
+  }
+
+  let queryBuilder = client
+    .from("leads")
+    .select("*", { count: "exact" })
+    .eq("agent_id", agentId)
+    .in("pipeline_stage", queryStages)
+
+  if (input.submittedFrom) {
+    queryBuilder = queryBuilder.gte("submitted_at", input.submittedFrom)
+  }
+
+  if (input.submittedTo) {
+    queryBuilder = queryBuilder.lt("submitted_at", input.submittedTo)
+  }
+
+  queryBuilder = applySearchFilter(queryBuilder, input.query)
+  queryBuilder = queryBuilder
+    .order(input.submittedFrom || input.submittedTo ? "submitted_at" : "updated_at", { ascending: false })
+    .range(input.offset, input.offset + input.limit - 1)
+
+  const { data, error, count } = await queryBuilder
+
+  if (error) {
+    throw error
+  }
+
+  const rawLeads = (data ?? []).map((row: any) => toPipelineLead(mapLeadRecord(row)))
+  const leadIds = rawLeads.map((lead) => lead.id)
+  const [appointmentsByLeadId, latestContactInteractionsByLeadId] = await Promise.all([
+    listScheduledAppointmentSummaries(client, leadIds),
+    input.tab === "active"
+      ? listLatestLeadContactInteractions(client, agentId, leadIds)
+      : Promise.resolve(new Map<string, LeadContactInteraction>())
+  ])
+  let leads: PipelineLead[] = rawLeads
+    .filter((lead) => isLeadInTab(lead, input.tab))
+    .filter((lead) => isLeadInCategory(lead, input.category))
+    .map((lead) => {
+      const displayStage = getPipelineDisplayStage(lead)
+      const appointment = appointmentsByLeadId.get(lead.id)
+      const latestContactInteraction = latestContactInteractionsByLeadId.get(lead.id)
+
+      if (appointment) {
+        return {
+          ...lead,
+          latestContactInteraction,
+          attentionReason: `Showing scheduled ${appointment.date} at ${appointment.startTime}.`
+        }
+      }
+
+      if (displayStage === "ready_to_show") {
+        return {
+          ...lead,
+          latestContactInteraction,
+          attentionReason: "Ready to show with no appointment scheduled."
+        }
+      }
+
+      return {
+        ...lead,
+        latestContactInteraction
+      }
+    })
+
+  if (input.tab === "active") {
+    leads = prioritizeActivePipelineLeads(
+      leads,
+      appointmentsByLeadId,
+      latestContactInteractionsByLeadId,
+      new Date()
+    )
+  }
+  const total = count ?? leads.length
+  const nextOffset = withNextOffset({
+    total,
+    offset: input.offset,
+    limit: input.limit,
+    visibleCount: rawLeads.length
+  })
+
+  return {
+    leads,
+    total,
+    nextOffset,
+    mode: "filtered_results",
+    summaryLabel: makeSummaryLabel({
+      mode: "filtered_results",
+      total,
+      visibleCount: leads.length,
+      submittedFrom: input.submittedFrom,
+      tab: input.tab
+    })
+  }
 }
 
 export async function listLeadIdsWithScheduledAppointments(
@@ -313,27 +993,21 @@ export async function listLeadIdsWithScheduledAppointments(
   agentId: string,
   leadIds?: string[]
 ) {
-  let scopedLeadIds = leadIds ?? []
-
-  if (scopedLeadIds.length === 0) {
-    const { data, error } = await client.from("leads").select("id").eq("agent_id", agentId)
-
-    if (error) {
-      throw error
-    }
-
-    scopedLeadIds = (data ?? []).map((lead: any) => lead.id)
-  }
-
-  if (scopedLeadIds.length === 0) {
+  if (leadIds && leadIds.length === 0) {
     return []
   }
 
-  const { data, error } = await client
+  let queryBuilder = client
     .from("appointments")
-    .select("*")
+    .select("lead_id")
+    .eq("agent_id", agentId)
     .eq("status", "scheduled")
-    .in("lead_id", scopedLeadIds)
+
+  if (leadIds) {
+    queryBuilder = queryBuilder.in("lead_id", leadIds)
+  }
+
+  const { data, error } = await queryBuilder
 
   if (error) {
     throw error
@@ -342,42 +1016,37 @@ export async function listLeadIdsWithScheduledAppointments(
   return Array.from(new Set((data ?? []).map((appointment: any) => appointment.lead_id)))
 }
 
-export async function getAnalyticsSummary(client: AppSupabaseClient, agentId: string) {
-  const { data, error } = await client
-    .from("leads")
-    .select("id, pipeline_stage, score")
-    .eq("agent_id", agentId)
+export async function getAnalyticsSummary(
+  client: AppSupabaseClient,
+  agentId: string
+): Promise<DashboardSummary> {
+  const { data, error } = await client.rpc("get_agent_dashboard_summary", {
+    p_agent_id: agentId
+  })
 
   if (error) {
     throw error
   }
 
-  const leads = data ?? []
-  const leadIds = leads.map((lead: any) => lead.id).filter(Boolean)
-  const activeAppointmentLeadIds = await listLeadIdsWithScheduledAppointments(client, agentId, leadIds)
-  const appointmentBookedLeadIds = new Set(
-    leads
-      .filter((lead: any) => lead.pipeline_stage === "appointment_booked")
-      .map((lead: any) => lead.id)
-      .concat(activeAppointmentLeadIds)
-  )
-  const readyToShow = leads.filter((lead: any) => lead.pipeline_stage === "ready_to_show").length
-  const appointmentBooked = appointmentBookedLeadIds.size
-  const nurture = leads.filter((lead: any) => lead.pipeline_stage === "nurture").length
-  const hold = leads.filter((lead: any) => lead.pipeline_stage === "hold").length
-  const scored = leads.filter((lead: any) => typeof lead.score === "number")
-  const averageScore =
-    scored.reduce((sum: number, lead: any) => sum + (lead.score ?? 0), 0) /
-    Math.max(scored.length, 1)
+  const summary = Array.isArray(data) ? data[0] : data
 
   return {
-    totalLeads: leads.length,
-    readyToShow,
-    appointmentBooked,
-    nurture,
-    hold,
-    averageScore: Number.parseFloat(averageScore.toFixed(2))
+    totalLeads: Number(summary?.total_leads ?? summary?.totalLeads ?? 0),
+    newLeads: Number(summary?.new_leads ?? summary?.newLeads ?? 0),
+    readyToShow: Number(summary?.ready_to_show ?? summary?.readyToShow ?? 0),
+    appointmentBooked: Number(summary?.appointment_booked ?? summary?.appointmentBooked ?? 0),
+    nurture: Number(summary?.nurture ?? 0),
+    hold: Number(summary?.hold ?? 0),
+    averageScore: Number(summary?.average_score ?? summary?.averageScore ?? 0)
   }
+}
+
+function isMissingRelationError(error: unknown, relationName: string) {
+  const candidate = error as { code?: string; message?: string }
+  return (
+    candidate.code === "PGRST205" &&
+    Boolean(candidate.message?.includes(relationName))
+  )
 }
 
 export async function createInvite(client: AppSupabaseClient, agentId: string) {
@@ -405,6 +1074,45 @@ export async function createInvite(client: AppSupabaseClient, agentId: string) {
   return mapInviteRecord(data)
 }
 
+export async function recordLeadContactInteraction(
+  client: AppSupabaseClient,
+  agentId: string,
+  leadId: string,
+  method: ContactMethod
+): Promise<LeadContactInteraction> {
+  const { data: lead, error: leadError } = await client
+    .from("leads")
+    .select("id")
+    .eq("agent_id", agentId)
+    .eq("id", leadId)
+    .maybeSingle()
+
+  if (leadError) {
+    throw leadError
+  }
+
+  if (!lead) {
+    throw new Error("Lead not found.")
+  }
+
+  const { data, error } = await client
+    .from("lead_contact_interactions")
+    .insert({
+      agent_id: agentId,
+      lead_id: leadId,
+      method,
+      occurred_at: nowIso()
+    })
+    .select(LEAD_CONTACT_INTERACTION_COLUMNS)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return mapLeadContactInteractionRecord(data)
+}
+
 export async function getLeadById(client: AppSupabaseClient, agentId: string, leadId: string) {
   const { data: lead, error: leadError } = await client
     .from("leads")
@@ -421,10 +1129,21 @@ export async function getLeadById(client: AppSupabaseClient, agentId: string, le
     return null
   }
 
-  const [{ data: answerRows, error: answerError }, { data: scoreRows, error: scoreError }] =
+  const [
+    { data: answerRows, error: answerError },
+    { data: scoreRows, error: scoreError },
+    { data: contactInteractionRows, error: contactInteractionError }
+  ] =
     await Promise.all([
       client.from("lead_answers").select("*").eq("lead_id", leadId).order("updated_at", { ascending: true }),
-      client.from("lead_scores").select("*").eq("lead_id", leadId).order("created_at", { ascending: false }).limit(1)
+      client.from("lead_scores").select("*").eq("lead_id", leadId).order("created_at", { ascending: false }).limit(1),
+      client
+        .from("lead_contact_interactions")
+        .select(LEAD_CONTACT_INTERACTION_COLUMNS)
+        .eq("agent_id", agentId)
+        .eq("lead_id", leadId)
+        .order("occurred_at", { ascending: false })
+        .limit(5)
     ])
 
   if (answerError) {
@@ -435,7 +1154,15 @@ export async function getLeadById(client: AppSupabaseClient, agentId: string, le
     throw scoreError
   }
 
-  return mapLeadRecord(lead, answerRows ?? [], scoreRows?.[0])
+  if (contactInteractionError) {
+    if (isMissingRelationError(contactInteractionError, "lead_contact_interactions")) {
+      return mapLeadRecord(lead, answerRows ?? [], scoreRows?.[0], [])
+    }
+
+    throw contactInteractionError
+  }
+
+  return mapLeadRecord(lead, answerRows ?? [], scoreRows?.[0], contactInteractionRows ?? [])
 }
 
 export async function updateLeadStage(
@@ -597,31 +1324,31 @@ export async function overrideLeadScore(
   )
 }
 
+function getEmbeddedLead(appointment: any) {
+  const lead = appointment.leads
+
+  if (Array.isArray(lead)) {
+    return lead[0]
+  }
+
+  return lead
+}
+
 export async function listAppointments(
   client: AppSupabaseClient,
   agentId: string,
-  status: "scheduled" | "completed" | "cancelled"
-) {
-  const { data: leadRows, error: leadError } = await client.from("leads").select("*").eq("agent_id", agentId)
-
-  if (leadError) {
-    throw leadError
-  }
-
-  const leads = leadRows ?? []
-  if (leads.length === 0) {
-    return []
-  }
-
-  const leadIds = leads.map((lead: any) => lead.id)
-  const { data: appointmentRows, error: appointmentError } = await client
+  input: AppointmentListQuery | AppointmentStatus
+): Promise<AppointmentListResponse> {
+  const query = typeof input === "string" ? { status: input, limit: 25, offset: 0 } : input
+  const { data: appointmentRows, error: appointmentError, count } = await client
     .from("appointments")
-    .select("*")
-    .eq("status", status)
-    .in("lead_id", leadIds)
-    .order("date", { ascending: status === "scheduled" })
-    .order("start_time", { ascending: status === "scheduled" })
+    .select(APPOINTMENT_LIST_COLUMNS, { count: "exact" })
+    .eq("agent_id", agentId)
+    .eq("status", query.status)
+    .order("date", { ascending: query.status === "scheduled" })
+    .order("start_time", { ascending: query.status === "scheduled" })
     .order("created_at", { ascending: false })
+    .range(query.offset, query.offset + query.limit - 1)
 
   if (appointmentError) {
     throw appointmentError
@@ -629,7 +1356,10 @@ export async function listAppointments(
 
   const appointments = appointmentRows ?? []
   if (appointments.length === 0) {
-    return []
+    return {
+      appointments: [],
+      total: count ?? 0
+    }
   }
 
   const appointmentIds = appointments.map((appointment: any) => appointment.id)
@@ -643,7 +1373,6 @@ export async function listAppointments(
     throw showingError
   }
 
-  const leadMap = new Map<string, any>(leads.map((lead: any) => [lead.id, lead]))
   const showingMap = new Map<string, any[]>()
 
   for (const showing of showingRows ?? []) {
@@ -652,13 +1381,25 @@ export async function listAppointments(
     showingMap.set(showing.appointment_id, current)
   }
 
-  return appointments.map((appointment: any) =>
+  const mappedAppointments = appointments.map((appointment: any) =>
     mapAppointment(
       appointment,
-      requireData(leadMap.get(appointment.lead_id), "Appointment lead not found."),
+      requireData(getEmbeddedLead(appointment), "Appointment lead not found."),
       showingMap.get(appointment.id) ?? []
     )
   )
+  const total = count ?? mappedAppointments.length
+
+  return {
+    appointments: mappedAppointments,
+    total,
+    nextOffset: withNextOffset({
+      total,
+      offset: query.offset,
+      limit: query.limit,
+      visibleCount: mappedAppointments.length
+    })
+  }
 }
 
 export async function listAppointmentsForLead(client: AppSupabaseClient, agentId: string, leadId: string) {
@@ -680,6 +1421,7 @@ export async function listAppointmentsForLead(client: AppSupabaseClient, agentId
   const { data: appointmentRows, error: appointmentError } = await client
     .from("appointments")
     .select("*")
+    .eq("agent_id", agentId)
     .eq("lead_id", leadId)
     .order("date", { ascending: true })
     .order("start_time", { ascending: true })
@@ -756,6 +1498,7 @@ export async function createAppointment(
   const { data: existingScheduled, error: existingError } = await client
     .from("appointments")
     .select("*")
+    .eq("agent_id", agentId)
     .eq("lead_id", input.leadId)
     .eq("status", "scheduled")
     .maybeSingle()
@@ -768,33 +1511,23 @@ export async function createAppointment(
     throw new Error("This lead already has a scheduled appointment.")
   }
 
-  const { data: appointment, error: appointmentError } = await client
-    .from("appointments")
-    .insert({
-      lead_id: input.leadId,
-      date: input.date,
-      start_time: input.startTime,
-      status: "scheduled",
-      notes: input.notes?.trim() || null
-    })
-    .select("*")
-    .single()
+  const { data: appointment, error: appointmentError } = await client.rpc(
+    "create_agent_appointment",
+    {
+      p_agent_id: agentId,
+      p_lead_id: input.leadId,
+      p_date: input.date,
+      p_start_time: input.startTime,
+      p_notes: input.notes?.trim() || null,
+      p_showings: normalizedShowings.map((showing) => ({
+        address: showing.address,
+        notes: showing.notes ?? null
+      }))
+    }
+  )
 
   if (appointmentError) {
     throw appointmentError
-  }
-
-  const { error: showingError } = await client.from("showings").insert(
-    normalizedShowings.map((showing) => ({
-      appointment_id: appointment.id,
-      address: showing.address,
-      order_index: showing.orderIndex,
-      notes: showing.notes ?? null
-    }))
-  )
-
-  if (showingError) {
-    throw showingError
   }
 
   const { data: showingRows, error: showingRowsError } = await client
@@ -832,6 +1565,7 @@ export async function updateAppointment(
   const { data: appointment, error: appointmentLookupError } = await client
     .from("appointments")
     .select("*")
+    .eq("agent_id", agentId)
     .eq("id", appointmentId)
     .maybeSingle()
 
@@ -853,41 +1587,23 @@ export async function updateAppointment(
 
   const leadRow = requireData(lead, "Lead not found.")
 
-  const { data: updatedAppointment, error: updateError } = await client
-    .from("appointments")
-    .update({
-      date: input.date,
-      start_time: input.startTime,
-      notes: input.notes?.trim() || null
-    })
-    .eq("id", appointmentId)
-    .select("*")
-    .single()
+  const { data: updatedAppointment, error: updateError } = await client.rpc(
+    "update_agent_appointment",
+    {
+      p_agent_id: agentId,
+      p_appointment_id: appointmentId,
+      p_date: input.date,
+      p_start_time: input.startTime,
+      p_notes: input.notes?.trim() || null,
+      p_showings: normalizedShowings.map((showing) => ({
+        address: showing.address,
+        notes: showing.notes ?? null
+      }))
+    }
+  )
 
   if (updateError) {
     throw updateError
-  }
-
-  const { error: deleteShowingsError } = await client
-    .from("showings")
-    .delete()
-    .eq("appointment_id", appointmentId)
-
-  if (deleteShowingsError) {
-    throw deleteShowingsError
-  }
-
-  const { error: insertShowingsError } = await client.from("showings").insert(
-    normalizedShowings.map((showing) => ({
-      appointment_id: appointmentId,
-      address: showing.address,
-      order_index: showing.orderIndex,
-      notes: showing.notes ?? null
-    }))
-  )
-
-  if (insertShowingsError) {
-    throw insertShowingsError
   }
 
   const { data: showingRows, error: showingRowsError } = await client
@@ -912,6 +1628,7 @@ export async function updateAppointmentStatus(
   const { data: appointment, error: appointmentLookupError } = await client
     .from("appointments")
     .select("*")
+    .eq("agent_id", agentId)
     .eq("id", appointmentId)
     .maybeSingle()
 
@@ -935,6 +1652,7 @@ export async function updateAppointmentStatus(
   const { data: updatedAppointment, error: updateError } = await client
     .from("appointments")
     .update({ status })
+    .eq("agent_id", agentId)
     .eq("id", appointmentId)
     .select("*")
     .single()
@@ -1109,6 +1827,135 @@ async function ensureLeadForInvite(
   return lead.id
 }
 
+export async function getPublicFormConfig(
+  client: AppSupabaseClient,
+  agentId: string
+): Promise<PublicFormConfig> {
+  const [
+    { data: agent, error: agentError },
+    { data: settings, error: settingsError },
+    { data: templates, error: templateError }
+  ] = await Promise.all([
+    client
+      .from("agents")
+      .select("full_name, brokerage")
+      .eq("id", agentId)
+      .maybeSingle(),
+    client
+      .from("agent_settings")
+      .select("brand_name, brand_color, accent_color")
+      .eq("agent_id", agentId)
+      .maybeSingle(),
+    client.from("question_templates").select("*").eq("agent_id", agentId)
+  ])
+
+  if (agentError) {
+    throw agentError
+  }
+
+  if (settingsError) {
+    throw settingsError
+  }
+
+  if (templateError) {
+    throw templateError
+  }
+
+  const mappedTemplates = (templates ?? []).map((entry: any) => mapQuestionTemplate(entry))
+
+  return {
+    branding: buildPublicIntakeBranding({
+      fullName: agent?.full_name,
+      brokerage: agent?.brokerage,
+      brandName: settings?.brand_name,
+      brandColor: settings?.brand_color,
+      accentColor: settings?.accent_color
+    }),
+    settings: settings
+      ? {
+          brandName: settings.brand_name,
+          brandColor: settings.brand_color,
+          accentColor: settings.accent_color
+        }
+      : undefined,
+    templates: {
+      sale: resolveTemplateForIntakeType("sale", mappedTemplates),
+      rental: resolveTemplateForIntakeType("rental", mappedTemplates)
+    }
+  }
+}
+
+export const getCachedPublicFormConfig = unstable_cache(
+  async (agentId: string) => {
+    const client = createSupabaseAdminClient()
+    return getPublicFormConfig(client, agentId)
+  },
+  ["public-intake-form-config-v2"],
+  {
+    revalidate: 300
+  }
+)
+
+export async function getPublicLeadIntakeContext(
+  client: AppSupabaseClient,
+  token: string,
+  loadConfig: PublicFormConfigLoader = getCachedPublicFormConfig
+) {
+  const { data: invite, error: inviteError } = await client
+    .from("invites")
+    .select("id, agent_id, lead_id, token_expires_at, draft_payload")
+    .eq("token", token)
+    .maybeSingle()
+
+  if (inviteError) {
+    throw inviteError
+  }
+
+  if (!invite) {
+    return null
+  }
+
+  const { data: leadStatus, error: leadError } = invite.lead_id
+    ? await client
+        .from("leads")
+        .select("status, intake_type")
+        .eq("id", invite.lead_id)
+        .maybeSingle()
+    : { data: null, error: null }
+
+  if (leadError) {
+    throw leadError
+  }
+
+  const [config] = await Promise.all([loadConfig(invite.agent_id)])
+  const parsedDraft = (invite.draft_payload as IntakeDraft | null) ?? {
+    contact: {
+      fullName: ""
+    }
+  }
+  const draftIntent =
+    parsedDraft.intent ??
+    (leadStatus?.intake_type ? intakeTypeToIntent(leadStatus.intake_type) : undefined)
+
+  return {
+    draft: parsedDraft,
+    branding: config.branding,
+    isExpired: new Date(invite.token_expires_at).getTime() < Date.now(),
+    leadStatus: leadStatus?.status,
+    settings: config.settings,
+    templates: config.templates,
+    questions: draftIntent
+      ? {
+          required: getRequiredQuestionsForIntent(draftIntent),
+          optional: getOptionalQuestionsForIntent(draftIntent)
+        }
+      : {
+          required: [],
+          optional: []
+        }
+  }
+}
+
 export async function getLeadIntakeContext(client: AppSupabaseClient, token: string) {
   const { data: invite, error: inviteError } = await client
     .from("invites")
@@ -1227,6 +2074,14 @@ export async function autosaveInviteDraft(
     throw new Error("This intake link has expired.")
   }
 
+  await autosaveInviteDraftForInvite(client, invite, draft)
+}
+
+async function autosaveInviteDraftForInvite(
+  client: AppSupabaseClient,
+  invite: any,
+  draft: IntakeDraft
+) {
   const leadId = await ensureLeadForInvite(client, invite, draft)
 
   if (leadId) {
@@ -1276,6 +2131,74 @@ export async function autosaveInviteDraft(
 
     await upsertLeadAnswersFromDraft(client, leadId, draft)
   }
+
+  return leadId
+}
+
+async function loadSubmittedInviteResult(
+  client: AppSupabaseClient,
+  agentId: string,
+  leadId: string
+) {
+  const [
+    { data: settingsRow, error: settingsError },
+    { data: leadRow, error: leadReadError },
+    { data: answerRows, error: answerRowsError },
+    { data: latestScoreRows, error: latestScoreError }
+  ] = await Promise.all([
+    client.from("agent_settings").select("*").eq("agent_id", agentId).single(),
+    client.from("leads").select("*").eq("id", leadId).single(),
+    client.from("lead_answers").select("*").eq("lead_id", leadId).order("updated_at", { ascending: true }),
+    client.from("lead_scores").select("*").eq("lead_id", leadId).order("created_at", { ascending: false }).limit(1)
+  ])
+
+  if (settingsError) {
+    throw settingsError
+  }
+
+  if (leadReadError) {
+    throw leadReadError
+  }
+
+  if (answerRowsError) {
+    throw answerRowsError
+  }
+
+  if (latestScoreError) {
+    throw latestScoreError
+  }
+
+  return {
+    lead: mapLeadRecord(leadRow, answerRows ?? [], latestScoreRows?.[0]),
+    settings: mapAgentSettings(settingsRow)
+  }
+}
+
+async function finalizeSubmittedInvite(
+  client: AppSupabaseClient,
+  input: {
+    agentId: string
+    leadId: string
+    score: number
+    recommendation: Recommendation
+    summary: string
+    breakdown: ScoreBreakdown
+  }
+) {
+  const { data, error } = await client.rpc("finalize_submitted_invite", {
+    p_agent_id: input.agentId,
+    p_lead_id: input.leadId,
+    p_score: input.score,
+    p_recommendation: input.recommendation,
+    p_summary: input.summary,
+    p_breakdown: input.breakdown
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return requireData(data, "Lead not found.")
 }
 
 export async function submitInvite(
@@ -1283,87 +2206,253 @@ export async function submitInvite(
   token: string,
   input: SubmitInviteInput
 ) {
-  const context = await getLeadIntakeContext(client, token)
+  const { data: invite, error: inviteError } = await client
+    .from("invites")
+    .select("*")
+    .eq("token", token)
+    .maybeSingle()
 
-  if (!context) {
+  if (inviteError) {
+    throw inviteError
+  }
+
+  if (!invite) {
     throw new Error("Invite not found.")
   }
 
-  if (context.isExpired) {
+  if (new Date(invite.token_expires_at).getTime() < Date.now()) {
     throw new Error("This intake link has expired.")
   }
 
   assertDraftSubmissionComplete(input.draft)
-  await autosaveInviteDraft(client, token, input.draft)
 
-  const refreshed = await getLeadIntakeContext(client, token)
-  if (!refreshed?.lead) {
+  if (invite.lead_id) {
+    const { data: existingLead, error: existingLeadError } = await client
+      .from("leads")
+      .select("status")
+      .eq("id", invite.lead_id)
+      .maybeSingle()
+
+    if (existingLeadError) {
+      throw existingLeadError
+    }
+
+    if (existingLead?.status === "submitted") {
+      return loadSubmittedInviteResult(client, invite.agent_id, invite.lead_id)
+    }
+  }
+
+  const leadId = await autosaveInviteDraftForInvite(client, invite, input.draft)
+
+  if (!leadId) {
     throw new Error("Lead not found.")
   }
 
-  assertLeadIntakeMutable(refreshed.lead.status)
+  const [{ data: settingsRow, error: settingsError }, { data: leadRow, error: leadReadError }] =
+    await Promise.all([
+      client.from("agent_settings").select("*").eq("agent_id", invite.agent_id).single(),
+      client.from("leads").select("*").eq("id", leadId).single()
+    ])
+
+  if (settingsError) {
+    throw settingsError
+  }
+
+  if (leadReadError) {
+    throw leadReadError
+  }
+
+  assertLeadIntakeMutable(leadRow.status)
+  const settings = mapAgentSettings(settingsRow)
   const submission = input.draft as IntakeSubmission
-  const scored = scoreLead(submission, refreshed.settings.showThreshold)
+  const scored = scoreLead(submission, settings.showThreshold)
   const persistedSummary = `${scored.summary} ${scored.nextAction}`.trim()
-
-  await upsertLeadAnswersFromDraft(client, refreshed.lead.id, input.draft)
-
-  const { error: scoreError } = await client.from("lead_scores").insert({
-    lead_id: refreshed.lead.id,
-    total: scored.total,
+  const lead = await finalizeSubmittedInvite(client, {
+    agentId: invite.agent_id,
+    leadId,
+    score: scored.total,
     recommendation: scored.recommendation,
     summary: persistedSummary,
-    breakdown: scored.breakdown,
-    overridden: false
+    breakdown: scored.breakdown
   })
 
-  if (scoreError) {
-    throw scoreError
-  }
-
-  const { data: lead, error: leadError } = await client
-    .from("leads")
-    .update({
-      status: "submitted",
-      pipeline_stage: "new",
-      score: scored.total,
-      recommendation: scored.recommendation,
-      reviewed_stage: null,
-      reviewed_at: null,
-      summary: persistedSummary,
-      submitted_at: nowIso(),
-      updated_at: nowIso()
-    })
-    .eq("id", refreshed.lead.id)
-    .select("*")
-    .single()
-
-  if (leadError) {
-    throw leadError
-  }
-
-  const { data: answerRows, error: answerRowsError } = await client
-    .from("lead_answers")
-    .select("*")
-    .eq("lead_id", refreshed.lead.id)
-    .order("updated_at", { ascending: true })
+  const [
+    { data: answerRows, error: answerRowsError },
+    { data: latestScoreRows, error: latestScoreError }
+  ] = await Promise.all([
+    client.from("lead_answers").select("*").eq("lead_id", leadId).order("updated_at", { ascending: true }),
+    client.from("lead_scores").select("*").eq("lead_id", leadId).order("created_at", { ascending: false }).limit(1)
+  ])
 
   if (answerRowsError) {
     throw answerRowsError
   }
 
-  return {
-    lead: mapLeadRecord(
-      lead,
-      answerRows ?? [],
-      {
-        breakdown: scored.breakdown,
-        overridden: false,
-        override_meta: null
-      }
-    ),
-    settings: refreshed.settings
+  if (latestScoreError) {
+    throw latestScoreError
   }
+
+  return {
+    lead: mapLeadRecord(lead, answerRows ?? [], latestScoreRows?.[0]),
+    settings
+  }
+}
+
+export async function recordProductEvents(
+  client: AppSupabaseClient,
+  agentId: string,
+  events: ProductEvent[]
+) {
+  if (events.length === 0) {
+    return {
+      acceptedCount: 0,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    }
+  }
+
+  const rows = events.map((event) => ({
+    id: event.id,
+    agent_id: agentId,
+    workspace_id: event.workspaceId ?? null,
+    actor_id: event.actorId ?? null,
+    event_name: event.eventName,
+    resource_type: event.resourceType ?? null,
+    resource_id: event.resourceId ?? null,
+    platform: event.platform,
+    app_version: event.appVersion ?? null,
+    build_number: event.buildNumber ?? null,
+    route: event.route ?? null,
+    properties: event.properties,
+    occurred_at: event.occurredAt
+  }))
+
+  const { error } = await client.from("product_events").upsert(rows, {
+    onConflict: "id",
+    ignoreDuplicates: true
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    acceptedCount: events.length,
+    rejectedCount: 0,
+    rejectedEventIds: []
+  }
+}
+
+export async function recordAuditEvents(
+  client: AppSupabaseClient,
+  agentId: string,
+  events: AuditEvent[]
+) {
+  if (events.length === 0) {
+    return {
+      acceptedCount: 0,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    }
+  }
+
+  const rows = events.map((event) => ({
+    id: event.id,
+    agent_id: agentId,
+    workspace_id: event.workspaceId ?? null,
+    actor_id: event.actorId ?? null,
+    actor_type: event.actorType,
+    action: event.action,
+    resource_type: event.resourceType,
+    resource_id: event.resourceId ?? null,
+    request_ip: event.requestIp ?? null,
+    user_agent: event.userAgent ?? null,
+    platform: event.platform ?? null,
+    app_version: event.appVersion ?? null,
+    before_summary: event.beforeSummary,
+    after_summary: event.afterSummary,
+    metadata: event.metadata,
+    occurred_at: event.occurredAt
+  }))
+
+  const { error } = await client.from("audit_events").upsert(rows, {
+    onConflict: "id",
+    ignoreDuplicates: true
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    acceptedCount: events.length,
+    rejectedCount: 0,
+    rejectedEventIds: []
+  }
+}
+
+export async function recordConsentRecords(
+  client: AppSupabaseClient,
+  agentId: string,
+  records: ConsentRecord[]
+) {
+  if (records.length === 0) {
+    return {
+      acceptedCount: 0,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    }
+  }
+
+  const rows = records.map((record) => ({
+    id: record.id,
+    subject_type: record.subjectType,
+    subject_id: record.subjectId ?? null,
+    agent_id: agentId,
+    consent_type: record.consentType,
+    status: record.status,
+    policy_version: record.policyVersion ?? null,
+    source: record.source ?? null,
+    metadata: record.metadata,
+    occurred_at: record.occurredAt,
+    expires_at: record.expiresAt ?? null
+  }))
+
+  const { error } = await client.from("consent_records").upsert(rows, {
+    onConflict: "id",
+    ignoreDuplicates: true
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    acceptedCount: records.length,
+    rejectedCount: 0,
+    rejectedEventIds: []
+  }
+}
+
+export async function recordAgentFeedback(
+  client: AppSupabaseClient,
+  agentId: string,
+  input: {
+    message: string
+    source: "mobile-settings"
+  }
+) {
+  const { error } = await client.from("agent_feedback").insert({
+    agent_id: agentId,
+    message: input.message,
+    source: input.source
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return { ok: true as const }
 }
 
 export async function recordDiagnosticEvents(

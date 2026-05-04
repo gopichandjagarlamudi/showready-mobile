@@ -26,8 +26,9 @@ export async function sendLeadScoredPushNotifications(payload: {
   title: string
   body: string
   data: {
-    leadId: string
+    leadId?: string
     route: "/(app)/new-leads"
+    submissionCount?: number
   }
 }) {
   if (payload.expoPushTokens.length === 0) {

@@ -1,9 +1,10 @@
 const fs = require("node:fs")
 const path = require("node:path")
 const { createClient } = require("@supabase/supabase-js")
-
-const DEMO_EMAIL = "demo@showready.local"
-const DEMO_PASSWORD = "demo12345"
+const {
+  buildMaestroAuthUrlOutput,
+  resolveDemoCredentials
+} = require("./maestro-demo-config.cjs")
 
 function loadLocalEnv() {
   const envPath = path.join(__dirname, "..", "..", "..", ".env.local")
@@ -51,6 +52,7 @@ async function main() {
   loadLocalEnv()
 
   const appUrl = requireEnv("APP_URL")
+  const credentials = resolveDemoCredentials()
   const client = createClient(
     requireEnv("EXPO_PUBLIC_SUPABASE_URL"),
     requireEnv("EXPO_PUBLIC_SUPABASE_ANON_KEY"),
@@ -63,19 +65,19 @@ async function main() {
   )
 
   const { data, error } = await client.auth.signInWithPassword({
-    email: DEMO_EMAIL,
-    password: DEMO_PASSWORD
+    email: credentials.email,
+    password: credentials.password
   })
 
   if (error || !data.session) {
     throw error ?? new Error("Unable to resolve a Supabase session for Maestro.")
   }
 
-  console.log(
-    `${appUrl}/--/auth/callback?access_token=${encodeURIComponent(
-      data.session.access_token
-    )}&refresh_token=${encodeURIComponent(data.session.refresh_token)}`
-  )
+  const outputPath = path.join(__dirname, "..", ".maestro-auth-url")
+  const output = buildMaestroAuthUrlOutput(appUrl, data.session, outputPath)
+  fs.writeFileSync(outputPath, output.fullUrl, { mode: 0o600 })
+  console.log(output.stdout)
+  console.error(output.stderr)
 }
 
 main().catch((error) => {

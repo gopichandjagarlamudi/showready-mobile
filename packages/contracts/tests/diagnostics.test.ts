@@ -63,6 +63,23 @@ describe("DiagnosticsEventSchema", () => {
       })
     ).toThrow()
   })
+
+  it("rejects oversized diagnostics strings and unexpected fields", () => {
+    expect(() =>
+      DiagnosticsEventSchema.parse({
+        id: "0c59f42d-ece8-4c07-a4ff-2358a0c1553f",
+        sessionId: "s".repeat(129),
+        deviceId: "device-1",
+        occurredAt: "2026-04-21T12:00:00.000Z",
+        eventType: "error.handled",
+        category: "error",
+        severity: "error",
+        message: "Something failed.",
+        platform: "ios",
+        unexpected: true
+      })
+    ).toThrow()
+  })
 })
 
 describe("DiagnosticsBatchSchema", () => {

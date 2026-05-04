@@ -2,15 +2,26 @@ import { NextResponse } from "next/server"
 import { saveSettingsProfile } from "@showready/application"
 import { SettingsMutationSchema } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
+import { requestErrorResponse } from "@/lib/observability"
 import { completeOnboarding, getAgentContext } from "@/lib/supabase/data"
 
 export async function GET(request: Request) {
+  let agentId: string | undefined
+
   try {
-    const { agentId, client } = await requireMobileAgent(request)
-    const context = await getAgentContext(client, agentId)
+    const auth = await requireMobileAgent(request)
+    agentId = auth.agentId
+    const context = await getAgentContext(auth.client, agentId)
 
     if (!context) {
-      return NextResponse.json({ error: "Agent settings not found." }, { status: 404 })
+      return requestErrorResponse({
+        request,
+        error: new Error("Agent settings not found."),
+        route: "api.mobile.settings",
+        status: 404,
+        agentId,
+        response: { error: "Agent settings not found." }
+      })
     }
 
     return NextResponse.json({
@@ -25,27 +36,52 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     if (error instanceof MobileAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return requestErrorResponse({
+        request,
+        error,
+        route: "api.mobile.settings",
+        status: error.status,
+        response: { error: error.message },
+        headers: error.headers
+      })
     }
 
-    return NextResponse.json({ error: "Unable to load settings." }, { status: 400 })
+    return requestErrorResponse({
+      request,
+      error,
+      route: "api.mobile.settings",
+      status: 400,
+      agentId,
+      response: { error: "Unable to load settings." }
+    })
   }
 }
 
 export async function PUT(request: Request) {
+  let agentId: string | undefined
+
   try {
-    const { agentId, client } = await requireMobileAgent(request)
+    const auth = await requireMobileAgent(request)
+    agentId = auth.agentId
+    const authenticatedAgentId = auth.agentId
     const payload = SettingsMutationSchema.parse(await request.json())
-    const existingContext = await getAgentContext(client, agentId)
+    const existingContext = await getAgentContext(auth.client, agentId)
 
     if (!existingContext) {
-      return NextResponse.json({ error: "Agent settings are not ready yet." }, { status: 404 })
+      return requestErrorResponse({
+        request,
+        error: new Error("Agent settings are not ready yet."),
+        route: "api.mobile.settings",
+        status: 404,
+        agentId,
+        response: { error: "Agent settings are not ready yet." }
+      })
     }
 
     await saveSettingsProfile(
       {
         saveSettings: async (input) => {
-          await completeOnboarding(client, agentId, {
+          await completeOnboarding(auth.client, authenticatedAgentId, {
             ...input,
             brandName: existingContext.settings.brandName,
             brandColor: existingContext.settings.brandColor,
@@ -66,9 +102,23 @@ export async function PUT(request: Request) {
     return NextResponse.json({ ok: true })
   } catch (error) {
     if (error instanceof MobileAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return requestErrorResponse({
+        request,
+        error,
+        route: "api.mobile.settings",
+        status: error.status,
+        response: { error: error.message },
+        headers: error.headers
+      })
     }
 
-    return NextResponse.json({ error: "Unable to save settings." }, { status: 400 })
+    return requestErrorResponse({
+      request,
+      error,
+      route: "api.mobile.settings",
+      status: 400,
+      agentId,
+      response: { error: "Unable to save settings." }
+    })
   }
 }

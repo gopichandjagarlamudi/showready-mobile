@@ -23,8 +23,12 @@ const mockCaptureDiagnosticsError = jest.fn()
 const mockFlushDiagnostics = jest.fn()
 const mockSetDiagnosticsApiClient = jest.fn()
 const mockReportApiRequestError = jest.fn()
+const mockGetDashboardSummary = jest.fn()
 const mockListNewLeads = jest.fn()
 const mockRegisterPushToken = jest.fn()
+const mockSubmitConsentRecords = jest.fn()
+const mockSubmitProductEvents = jest.fn()
+const mockRandomUUID = jest.fn()
 const mockGetPermissionsAsync = jest.fn()
 const mockRequestPermissionsAsync = jest.fn()
 const mockGetExpoPushTokenAsync = jest.fn()
@@ -36,9 +40,12 @@ let notificationReceivedListener: ((response: any) => void) | null = null
 
 jest.mock("@showready/infrastructure", () => ({
   createMobileApiClient: jest.fn(() => ({
+    getDashboardSummary: (...args: unknown[]) => mockGetDashboardSummary(...args),
     listLeads: jest.fn(),
     listNewLeads: (...args: unknown[]) => mockListNewLeads(...args),
-    registerPushToken: (...args: unknown[]) => mockRegisterPushToken(...args)
+    registerPushToken: (...args: unknown[]) => mockRegisterPushToken(...args),
+    submitConsentRecords: (...args: unknown[]) => mockSubmitConsentRecords(...args),
+    submitProductEvents: (...args: unknown[]) => mockSubmitProductEvents(...args)
   }))
 }))
 
@@ -50,6 +57,10 @@ jest.mock("expo-notifications", () => ({
     mockAddNotificationReceivedListener(...args),
   addNotificationResponseReceivedListener: (...args: unknown[]) =>
     mockAddNotificationResponseReceivedListener(...args)
+}))
+
+jest.mock("expo-crypto", () => ({
+  randomUUID: (...args: unknown[]) => mockRandomUUID(...args)
 }))
 
 jest.mock("expo-router", () => ({
@@ -105,6 +116,8 @@ function SessionValueProbe() {
 }
 
 describe("SessionProvider realtime refresh", () => {
+  const UUID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
   let appStateChangeListener: ((state: string) => void) | null = null
   let appStateAddEventListenerSpy: jest.SpyInstance
 
@@ -175,10 +188,36 @@ describe("SessionProvider realtime refresh", () => {
     mockSetDiagnosticsApiClient.mockReset()
     mockReportApiRequestError.mockReset()
     mockReportApiRequestError.mockResolvedValue(undefined)
+    mockGetDashboardSummary.mockReset()
+    mockGetDashboardSummary.mockResolvedValue({
+      totalLeads: 1,
+      newLeads: 1,
+      readyToShow: 0,
+      appointmentBooked: 0,
+      nurture: 0,
+      hold: 0,
+      averageScore: 0
+    })
     mockListNewLeads.mockReset()
     mockListNewLeads.mockResolvedValue([{ id: "lead-new" }])
     mockRegisterPushToken.mockReset()
     mockRegisterPushToken.mockResolvedValue({ ok: true })
+    mockSubmitConsentRecords.mockReset()
+    mockSubmitConsentRecords.mockResolvedValue({
+      acceptedCount: 1,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    })
+    mockSubmitProductEvents.mockReset()
+    mockSubmitProductEvents.mockResolvedValue({
+      acceptedCount: 1,
+      rejectedCount: 0,
+      rejectedEventIds: []
+    })
+    mockRandomUUID.mockReset()
+    mockRandomUUID
+      .mockReturnValueOnce("11111111-1111-4111-8111-111111111111")
+      .mockReturnValueOnce("22222222-2222-4222-8222-222222222222")
     mockGetPermissionsAsync.mockReset()
     mockGetPermissionsAsync.mockResolvedValue({ status: "granted" })
     mockRequestPermissionsAsync.mockReset()
@@ -240,6 +279,28 @@ describe("SessionProvider realtime refresh", () => {
     expect(mockSupabaseChannel).toHaveBeenCalledWith("mobile-workspace-agent-1")
   })
 
+  it("subscribes to agent-scoped appointment realtime changes", async () => {
+    render(
+      <SessionProvider>
+        <SessionValueProbe />
+      </SessionProvider>
+    )
+
+    await waitFor(() => {
+      expect(mockSupabaseChannel).toHaveBeenCalledWith("mobile-workspace-agent-1")
+    })
+
+    expect(mockChannel.on).toHaveBeenCalledWith(
+      "postgres_changes",
+      expect.objectContaining({
+        schema: "public",
+        table: "appointments",
+        filter: "agent_id=eq.agent-1"
+      }),
+      expect.any(Function)
+    )
+  })
+
   it("registers push tokens, tracks unread new leads, and routes notification taps", async () => {
     const screen = render(
       <SessionProvider>
@@ -251,9 +312,38 @@ describe("SessionProvider realtime refresh", () => {
       expect(screen.getByTestId("unread-new-leads").props.children).toBe(1)
     })
 
+    expect(mockGetDashboardSummary).toHaveBeenCalled()
+    expect(mockListNewLeads).not.toHaveBeenCalled()
     expect(mockRegisterPushToken).toHaveBeenCalledWith({
       expoPushToken: "ExponentPushToken[test]",
       platform: expect.any(String)
+    })
+    expect(mockSubmitConsentRecords).toHaveBeenCalledWith({
+      records: [
+        expect.objectContaining({
+          id: expect.stringMatching(UUID_PATTERN),
+          subjectType: "agent",
+          consentType: "push_notifications",
+          status: "granted",
+          source: "mobile-session-provider",
+          metadata: {
+            permissionStatus: "granted"
+          }
+        })
+      ]
+    })
+    expect(mockSubmitProductEvents).toHaveBeenCalledWith({
+      events: [
+        expect.objectContaining({
+          id: expect.stringMatching(UUID_PATTERN),
+          eventName: "notification.token_registered",
+          resourceType: "notification",
+          platform: expect.any(String),
+          properties: {
+            permissionStatus: "granted"
+          }
+        })
+      ]
     })
 
     await act(async () => {
@@ -273,8 +363,59 @@ describe("SessionProvider realtime refresh", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/new-leads")
   })
 
+  it("keeps first-party event IDs as UUIDs when Web Crypto is unavailable", async () => {
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: undefined
+    })
+
+    try {
+      render(
+        <SessionProvider>
+          <SessionValueProbe />
+        </SessionProvider>
+      )
+
+      await waitFor(() => {
+        expect(mockSubmitProductEvents).toHaveBeenCalledTimes(1)
+      })
+
+      const consentPayload = mockSubmitConsentRecords.mock.calls[0]?.[0]
+      const productPayload = mockSubmitProductEvents.mock.calls[0]?.[0]
+
+      expect(consentPayload.records[0].id).toMatch(UUID_PATTERN)
+      expect(productPayload.events[0].id).toMatch(UUID_PATTERN)
+      expect(mockRandomUUID).toHaveBeenCalledTimes(2)
+    } finally {
+      if (cryptoDescriptor) {
+        Object.defineProperty(globalThis, "crypto", cryptoDescriptor)
+      } else {
+        delete (globalThis as { crypto?: Crypto }).crypto
+      }
+    }
+  })
+
   it("refreshes workspace state when a new-lead notification arrives in the foreground", async () => {
-    mockListNewLeads.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "lead-fresh" }])
+    mockGetDashboardSummary
+      .mockResolvedValueOnce({
+        totalLeads: 0,
+        newLeads: 0,
+        readyToShow: 0,
+        appointmentBooked: 0,
+        nurture: 0,
+        hold: 0,
+        averageScore: 0
+      })
+      .mockResolvedValueOnce({
+        totalLeads: 1,
+        newLeads: 1,
+        readyToShow: 0,
+        appointmentBooked: 0,
+        nurture: 0,
+        hold: 0,
+        averageScore: 0
+      })
 
     const screen = render(
       <SessionProvider>

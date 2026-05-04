@@ -17,6 +17,9 @@
       "@showready/contracts": [
         "packages/contracts/src/index.ts"
       ],
+      "@showready/contracts/intake-public": [
+        "packages/contracts/src/intake-public.ts"
+      ],
       "@showready/design-system": [
         "packages/design-system/src/index.ts"
       ],

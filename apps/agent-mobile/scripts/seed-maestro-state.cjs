@@ -1,9 +1,9 @@
 const fs = require("node:fs")
 const path = require("node:path")
+const { randomUUID } = require("node:crypto")
 const { createClient } = require("@supabase/supabase-js")
+const { resolveDemoCredentials } = require("./maestro-demo-config.cjs")
 
-const DEMO_EMAIL = "demo@showready.local"
-const DEMO_PASSWORD = "demo12345"
 const DEMO_AGENT_ID = "9c0b8ef5-1b2f-4b4c-8d6a-9b4e0f7d3c51"
 const SALE_TEMPLATE_ID = "8ce0d0bb-20cc-4cf9-8a78-a2b1ff5c80d2"
 const RENTAL_TEMPLATE_ID = "0f59c77c-f4ea-4ef4-b381-c8b72fc64658"
@@ -18,7 +18,7 @@ const DEMO_LEADS = [
     buyerEmail: "maestro.review@example.com",
     buyerPhone: "+1 416 555 0101",
     intakeType: "sale",
-    token: "87cb75ad-a9c7-4bd2-b4af-b0c5dcb63af1",
+    token: randomUUID(),
     pipelineStage: "new",
     recommendation: "show",
     score: 9.2,
@@ -32,7 +32,7 @@ const DEMO_LEADS = [
     buyerEmail: "maestro.appointment@example.com",
     buyerPhone: "+1 647 555 0199",
     intakeType: "rental",
-    token: "4cbca64a-4699-4cb4-81fd-d0ea6fcb8748",
+    token: randomUUID(),
     pipelineStage: "ready_to_show",
     recommendation: "show",
     score: 8.6,
@@ -46,7 +46,7 @@ const DEMO_LEADS = [
     buyerEmail: "maestro.detail@example.com",
     buyerPhone: "+1 437 555 0188",
     intakeType: "sale",
-    token: "280d3aa9-8b2b-4e8f-813d-b72d2e3af082",
+    token: randomUUID(),
     pipelineStage: "nurture",
     recommendation: "nurture",
     score: 6.4,
@@ -96,7 +96,7 @@ function loadLocalEnv() {
   }
 }
 
-async function getOrCreateDemoUser(client) {
+async function getOrCreateDemoUser(client, credentials) {
   const { data: listed, error: listError } = await client.auth.admin.listUsers({
     page: 1,
     perPage: 200
@@ -106,11 +106,11 @@ async function getOrCreateDemoUser(client) {
     throw listError
   }
 
-  const existing = listed.users.find((user) => user.email === DEMO_EMAIL)
+  const existing = listed.users.find((user) => user.email === credentials.email)
   if (existing) {
     const { data, error } = await client.auth.admin.updateUserById(existing.id, {
-      email: DEMO_EMAIL,
-      password: DEMO_PASSWORD,
+      email: credentials.email,
+      password: credentials.password,
       email_confirm: true,
       user_metadata: {
         full_name: "Demo Agent"
@@ -126,8 +126,8 @@ async function getOrCreateDemoUser(client) {
 
   const { data, error } = await client.auth.admin.createUser({
     id: DEMO_AGENT_ID,
-    email: DEMO_EMAIL,
-    password: DEMO_PASSWORD,
+    email: credentials.email,
+    password: credentials.password,
     email_confirm: true,
     user_metadata: {
       full_name: "Demo Agent"
@@ -141,7 +141,7 @@ async function getOrCreateDemoUser(client) {
   return data.user
 }
 
-async function seedAgentScaffold(client, agentId) {
+async function seedAgentScaffold(client, agentId, credentials) {
   const now = new Date().toISOString()
 
   await client.from("agent_settings").delete().eq("agent_id", agentId)
@@ -150,7 +150,7 @@ async function seedAgentScaffold(client, agentId) {
   const { error: agentError } = await client.from("agents").upsert(
     {
       id: agentId,
-      email: DEMO_EMAIL,
+      email: credentials.email,
       full_name: "Demo Agent",
       brokerage: "Northline Realty",
       license_number: "SR-2026-001",
@@ -320,6 +320,7 @@ async function seedLeadState(client, agentId) {
 
 async function main() {
   loadLocalEnv()
+  const credentials = resolveDemoCredentials()
 
   const client = createClient(
     requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -332,12 +333,12 @@ async function main() {
     }
   )
 
-  const user = await getOrCreateDemoUser(client)
-  await seedAgentScaffold(client, user.id)
+  const user = await getOrCreateDemoUser(client, credentials)
+  await seedAgentScaffold(client, user.id, credentials)
   await resetLeadState(client, user.id)
   await seedLeadState(client, user.id)
 
-  console.log(`Seeded Maestro demo state for ${DEMO_EMAIL} (${user.id}).`)
+  console.log(`Seeded Maestro demo state for ${credentials.email} (${user.id}).`)
 }
 
 main().catch((error) => {

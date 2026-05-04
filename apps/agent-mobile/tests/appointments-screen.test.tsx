@@ -36,15 +36,24 @@ jest.mock("../providers/session-provider", () => ({
   useMobileApi: jest.fn()
 }))
 
+jest.mock("../lib/diagnostics/service", () => ({
+  captureDiagnosticsError: jest.fn(async () => {})
+}))
+
 const { useSession, useMobileApi } = jest.requireMock("../providers/session-provider") as {
   useSession: jest.Mock
   useMobileApi: jest.Mock
 }
+const { captureDiagnosticsError } = jest.requireMock("../lib/diagnostics/service") as {
+  captureDiagnosticsError: jest.Mock
+}
 
 describe("AppointmentsScreen", () => {
   let saveAppointment: jest.Mock
+  let listAppointments: jest.Mock
 
   beforeEach(() => {
+    captureDiagnosticsError.mockClear()
     useSession.mockReturnValue({
       session: {
         user: {
@@ -54,10 +63,15 @@ describe("AppointmentsScreen", () => {
     })
 
     saveAppointment = jest.fn(async () => ({ ok: true }))
+    listAppointments = jest.fn(async () => ({
+      appointments: [],
+      total: 0
+    }))
 
     useMobileApi.mockReturnValue({
-      listAppointments: jest.fn(async () => []),
-      listLeads: jest.fn(async () => [
+      listAppointments,
+      listLeads: jest.fn(async () => ({
+        leads: [
         {
           id: "lead-1",
           agentId: "agent-1",
@@ -166,7 +180,9 @@ describe("AppointmentsScreen", () => {
           createdAt: "2026-04-24T12:00:00.000Z",
           updatedAt: "2026-04-24T12:00:00.000Z"
         }
-      ]),
+        ],
+        total: 6
+      })),
       saveAppointment,
       updateAppointmentStatus: jest.fn()
     })
@@ -208,6 +224,12 @@ describe("AppointmentsScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("appointment-lead-option-lead-2")).toBeTruthy()
     })
+    expect(useMobileApi.mock.results[0]?.value.listLeads).toHaveBeenCalledWith({
+      scope: "appointment_eligible",
+      query: "briar",
+      limit: 10,
+      offset: 0
+    })
     expect(screen.queryByTestId("appointment-lead-option-lead-1")).toBeNull()
 
     fireEvent.changeText(screen.getByTestId("appointment-lead-search-input"), "missing")
@@ -229,11 +251,40 @@ describe("AppointmentsScreen", () => {
     })
   })
 
+  it("logs appointment load errors without rendering technical details", async () => {
+    const parseError = new Error(
+      '[{"origin":"string","code":"invalid_format","message":"Start time must use HH:mm format."}]'
+    )
+    listAppointments.mockRejectedValueOnce(parseError)
+
+    const screen = render(<AppointmentsScreen />)
+
+    expect(await screen.findByText("Unable to load appointments")).toBeTruthy()
+    expect(screen.getAllByText("Try again once the workspace reconnects.").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/invalid_format/)).toBeNull()
+    expect(screen.queryByText(/Start time must use HH:mm format/)).toBeNull()
+    expect(captureDiagnosticsError).toHaveBeenCalledWith(parseError, {
+      eventType: "error.handled",
+      category: "api",
+      severity: "error",
+      screen: "appointments",
+      context: {
+        action: "load-appointments",
+        status: "scheduled"
+      }
+    })
+  })
+
   it("starts with three recent ready leads and uses search for the full eligible list", async () => {
     const screen = render(<AppointmentsScreen />)
 
     fireEvent.press(await screen.findByTestId("appointments-open-schedule-sheet"))
 
+    expect(useMobileApi.mock.results[0]?.value.listLeads).toHaveBeenCalledWith({
+      scope: "appointment_eligible",
+      limit: 3,
+      offset: 0
+    })
     expect(await screen.findByTestId("appointment-lead-option-lead-3")).toBeTruthy()
     expect(screen.getByTestId("appointment-lead-option-lead-4")).toBeTruthy()
     expect(screen.getByTestId("appointment-lead-option-lead-1")).toBeTruthy()

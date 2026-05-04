@@ -27,11 +27,10 @@ Use the known-good local routes and entrypoints for every verification pass in t
 - Reseed the live demo state before authenticated mobile runs with `corepack pnpm --filter @showready/agent-mobile seed:maestro`.
 - Generate a real Supabase-backed auth callback URL for Maestro with:
   - `APP_URL=showready://auth/callback corepack pnpm --filter @showready/agent-mobile maestro:auth-url`
+- The command prints the full URL to stdout for command substitution, logs a redacted copy, and writes the full local-only URL to `apps/agent-mobile/.maestro-auth-url`.
 - The mobile app now has a concrete Expo Router callback route at `/auth/callback`, so authenticated deep-link runs should use:
   - `showready://auth/callback?...`
-- The demo credentials used by the authenticated flows are:
-  - `demo@showready.local`
-  - `demo12345`
+- Provide `MAESTRO_DEMO_EMAIL` and `MAESTRO_DEMO_PASSWORD` in local env for authenticated demo flows.
 - Android and iOS device automation are still sensitive to native build handoff timing. If a Maestro run stalls before app content appears, rebuild the dev client, restart Metro, and re-open the `showready://auth/callback` deep link rather than switching routes.
 - Use the seeded lead ids when you need stable selectors in Maestro:
   - Review lead: `e357e934-6f9a-4d75-bf12-8db0cd1bf701`
