@@ -116,6 +116,45 @@ describe("requireMobileAgent", () => {
     await expect(requireMobileAgent(request())).rejects.toMatchObject({ status: 429 })
   })
 
+  it("keeps pre-auth route limits isolated so diagnostics bursts do not block dashboard loads", async () => {
+    process.env.MOBILE_RATE_LIMIT_PRE_AUTH_PER_MINUTE = "2"
+    const { requireMobileAgent, resetMobileRateLimits } = await import("./mobile-auth")
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: null },
+      error: new Error("invalid token")
+    })
+    mockCreateSupabaseAdminClient.mockReturnValue({
+      auth: {
+        getUser
+      }
+    })
+
+    const request = (path: string, method = "GET") =>
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: {
+          authorization: "Bearer invalid-token",
+          "x-forwarded-for": "203.0.113.47"
+        }
+      })
+
+    resetMobileRateLimits()
+    await expect(requireMobileAgent(request("/api/mobile/diagnostics", "POST"))).rejects.toMatchObject({
+      status: 401
+    })
+    await expect(requireMobileAgent(request("/api/mobile/diagnostics", "POST"))).rejects.toMatchObject({
+      status: 401
+    })
+    await expect(requireMobileAgent(request("/api/mobile/diagnostics", "POST"))).rejects.toMatchObject({
+      status: 429
+    })
+
+    await expect(requireMobileAgent(request("/api/mobile/dashboard"))).rejects.toMatchObject({
+      status: 401
+    })
+    expect(getUser).toHaveBeenCalledTimes(3)
+  })
+
   it("caches completed agent scaffold checks across nearby requests", async () => {
     process.env.MOBILE_RATE_LIMIT_PRE_AUTH_PER_MINUTE = "10"
     process.env.MOBILE_RATE_LIMIT_USER_PER_MINUTE = "10"

@@ -80,11 +80,6 @@ async function enforcePreAuthRateLimit(request: Request) {
   const results = await consumeRateLimits(getDefaultRateLimitStore(), {
     limits: [
       {
-        key: `mobile:pre-auth:ip:${ip}`,
-        limit,
-        windowMs: WINDOW_MS
-      },
-      {
         key: `mobile:pre-auth:route:${routeKey}:ip:${ip}`,
         limit,
         windowMs: WINDOW_MS
