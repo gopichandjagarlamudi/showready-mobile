@@ -1,9 +1,18 @@
 import type { PropsWithChildren } from "react"
 import type { StyleProp, ViewStyle } from "react-native"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Feather } from "@expo/vector-icons"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { mobileTheme } from "@showready/design-system"
+
+const showReadyMark = require("../assets/app-icon.png")
+
+export type ScreenHeaderAction = {
+  icon: keyof typeof Feather.glyphMap
+  label: string
+  onPress: () => void
+  testID?: string
+}
 
 export function ScreenShell({
   title,
@@ -12,7 +21,7 @@ export function ScreenShell({
   scrollable = true,
   contentStyle,
   testID,
-  eyebrow = "ShowReady mobile",
+  leadingAction,
   headerAction
 }: PropsWithChildren<{
   title: string
@@ -21,34 +30,33 @@ export function ScreenShell({
   contentStyle?: StyleProp<ViewStyle>
   testID?: string
   eyebrow?: string
-  headerAction?: {
-    icon: keyof typeof Feather.glyphMap
-    label: string
-    onPress: () => void
-    testID?: string
-  }
+  leadingAction?: ScreenHeaderAction
+  headerAction?: ScreenHeaderAction
 }>) {
   const content = (
     <>
       <View style={styles.hero}>
         <View style={styles.heroTopRow}>
-          <View style={styles.eyebrowPill}>
-            <Text style={styles.eyebrow}>{eyebrow}</Text>
-          </View>
-          {headerAction ? (
-            <Pressable
-              testID={headerAction.testID}
-              accessibilityRole="button"
-              accessibilityLabel={headerAction.label}
-              onPress={headerAction.onPress}
-              style={({ pressed }) => [
-                styles.headerAction,
-                pressed ? styles.headerActionPressed : null
-              ]}
+          <View style={styles.leadingCluster}>
+            {leadingAction ? <HeaderIconButton action={leadingAction} /> : null}
+            <View
+              accessibilityRole="image"
+              accessibilityLabel="ShowReady"
+              style={styles.brandLockup}
             >
-              <Feather name={headerAction.icon} size={18} color={mobileTheme.colors.ink} />
-            </Pressable>
-          ) : null}
+              <Image
+                source={showReadyMark}
+                resizeMode="cover"
+                style={styles.brandMark}
+                testID="showready-brand-mark"
+              />
+              <View style={styles.wordmark}>
+                <Text style={styles.wordmarkShow}>Show</Text>
+                <Text style={styles.wordmarkReady}>Ready</Text>
+              </View>
+            </View>
+          </View>
+          {headerAction ? <HeaderIconButton action={headerAction} /> : null}
         </View>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
@@ -75,6 +83,23 @@ export function ScreenShell({
   )
 }
 
+function HeaderIconButton({ action }: { action: ScreenHeaderAction }) {
+  return (
+    <Pressable
+      testID={action.testID}
+      accessibilityRole="button"
+      accessibilityLabel={action.label}
+      onPress={action.onPress}
+      style={({ pressed }) => [
+        styles.headerAction,
+        pressed ? styles.headerActionPressed : null
+      ]}
+    >
+      <Feather name={action.icon} size={20} color={mobileTheme.colors.ink} />
+    </Pressable>
+  )
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -85,10 +110,10 @@ const styles = StyleSheet.create({
     backgroundColor: mobileTheme.colors.background
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingHorizontal: 24,
+    paddingTop: 14,
     paddingBottom: 132,
-    gap: 22
+    gap: 18
   },
   hero: {
     gap: 10
@@ -99,20 +124,39 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12
   },
-  eyebrowPill: {
-    borderRadius: mobileTheme.radii.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    backgroundColor: mobileTheme.colors.surfaceTint,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.borderStrong
+  leadingCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+    gap: 8
   },
-  eyebrow: {
-    color: mobileTheme.colors.brandStrong,
-    letterSpacing: 0,
-    textTransform: "uppercase",
-    fontWeight: "700",
-    fontSize: mobileTheme.typography.eyebrow
+  brandLockup: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+    gap: 10
+  },
+  brandMark: {
+    width: 30,
+    height: 30,
+    borderRadius: 9
+  },
+  wordmark: {
+    flexDirection: "row",
+    alignItems: "baseline"
+  },
+  wordmarkShow: {
+    color: mobileTheme.colors.ink,
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: "800"
+  },
+  wordmarkReady: {
+    color: mobileTheme.colors.brandAlt,
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: "800"
   },
   headerAction: {
     minWidth: 44,
@@ -133,12 +177,12 @@ const styles = StyleSheet.create({
     color: mobileTheme.colors.ink,
     fontSize: mobileTheme.typography.title,
     lineHeight: 40,
-    fontWeight: "800"
+    fontWeight: "900"
   },
   subtitle: {
     color: mobileTheme.colors.mutedInk,
     fontSize: mobileTheme.typography.bodySmall,
-    lineHeight: 21,
+    lineHeight: 22,
     maxWidth: 560
   },
   body: {

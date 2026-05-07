@@ -43,26 +43,27 @@ export const showReadyTokens = {
 
 export const mobileTheme = {
   colors: {
-    background: "#fbfaf7",
+    background: "#fffefd",
     surface: "#ffffff",
-    surfaceStrong: "#f2f0ea",
-    surfaceMuted: "#f6f5f1",
-    surfaceTint: "#eef5ef",
-    ink: "#171b26",
-    mutedInk: "#565b67",
-    subtleInk: "#70747e",
-    border: "#e4ded4",
-    borderStrong: "#d4cabd",
-    brand: "#24533f",
-    brandStrong: "#183f2f",
-    accent: "#c45f2c",
-    focus: "#a7c8b3",
-    ready: "#1f7a5c",
+    surfaceStrong: "#f5f1ff",
+    surfaceMuted: "#faf9ff",
+    surfaceTint: "#f1edff",
+    ink: "#0d1324",
+    mutedInk: "#5c6272",
+    subtleInk: "#808696",
+    border: "#ebe7f2",
+    borderStrong: "#ddd6eb",
+    brand: "#6f3ff5",
+    brandStrong: "#5d35d8",
+    brandAlt: "#e43fa3",
+    accent: "#ff7a2d",
+    focus: "#c6b7ff",
+    ready: "#1f8a65",
     readySoft: "#e5f3eb",
-    appointment: "#7057b9",
-    appointmentSoft: "#eee9fb",
-    nurture: "#c45f2c",
-    nurtureSoft: "#f9eadf",
+    appointment: "#6f3ff5",
+    appointmentSoft: "#f0ebff",
+    nurture: "#d95a1d",
+    nurtureSoft: "#fff0e7",
     hold: "#666a73",
     holdSoft: "#eeeeef",
     won: "#247244",
@@ -76,8 +77,8 @@ export const mobileTheme = {
   },
   radii: {
     ...showReadyTokens.radii,
-    control: 18,
-    sheet: 30
+    control: 22,
+    sheet: 32
   },
   spacing: {
     xs: 4,
@@ -92,21 +93,26 @@ export const mobileTheme = {
     body: 17,
     bodySmall: 15,
     title: 34,
-    section: 22
+    section: 28
+  },
+  gradients: {
+    primary: ["#6f3ff5", "#d940b1", "#ff8a2a"],
+    primarySoft: ["#f3efff", "#fff0f8", "#fff2e5"],
+    tab: ["#6f3ff5", "#d940b1", "#ff8a2a"]
   },
   elevation: {
     card: {
       shadowColor: "#171b26",
-      shadowOpacity: 0.07,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.08,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
       elevation: 3
     },
     floating: {
       shadowColor: "#171b26",
-      shadowOpacity: 0.13,
-      shadowRadius: 24,
-      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.14,
+      shadowRadius: 26,
+      shadowOffset: { width: 0, height: 14 },
       elevation: 8
     }
   }

@@ -21,11 +21,11 @@ export function SurfaceCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: mobileTheme.colors.surface,
-    borderRadius: mobileTheme.radii.card,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: mobileTheme.colors.border,
-    padding: 18,
-    gap: 12,
+    padding: 24,
+    gap: 14,
     ...mobileTheme.elevation.card
   }
 })

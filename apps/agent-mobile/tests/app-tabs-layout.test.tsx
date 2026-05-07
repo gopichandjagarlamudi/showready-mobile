@@ -75,7 +75,7 @@ describe("AppTabsLayout", () => {
     })
   })
 
-  it("uses the ShowReady green token for the active tab state", () => {
+  it("uses the refreshed purple token for the active tab state", () => {
     useSession.mockReturnValue({
       session: { user: { id: "agent-1" } },
       isBootstrapping: false,
@@ -85,7 +85,7 @@ describe("AppTabsLayout", () => {
     render(<AppTabsLayout />)
 
     expect(tabsCalls[0]?.screenOptions).toMatchObject({
-      tabBarActiveTintColor: "#24533f"
+      tabBarActiveTintColor: "#6f3ff5"
     })
   })
 })

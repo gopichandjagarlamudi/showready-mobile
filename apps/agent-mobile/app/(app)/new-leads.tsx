@@ -3,11 +3,14 @@ import { FlatList, StyleSheet, Text, View } from "react-native"
 import { router } from "expo-router"
 import type { Lead } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
+import { InviteToolsSheet } from "@/components/invite-tools-sheet"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
 import { InlineMessage } from "@/components/ui/inline-message"
+import { LeadIntentChip } from "@/components/ui/lead-intent-chip"
 import { StageChip } from "@/components/ui/stage-chip"
 import { SurfaceCard } from "@/components/ui/surface-card"
+import { settingsHeaderAction } from "@/lib/settings-header-action"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
@@ -31,6 +34,7 @@ export default function NewLeadsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busyLeadIds, setBusyLeadIds] = useState<Record<string, boolean>>({})
   const [messages, setMessages] = useState<Record<string, string | null>>({})
+  const [isInviteSheetOpen, setIsInviteSheetOpen] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -109,10 +113,11 @@ export default function NewLeadsScreen() {
 
   return (
     <ScreenShell
-      title="New leads"
+      title="New Leads"
       testID="new-leads-screen"
       scrollable={false}
       contentStyle={styles.shellContent}
+      headerAction={settingsHeaderAction("new-leads-settings-button")}
     >
       {loadState === "loading" ? (
         <EmptyState
@@ -125,6 +130,10 @@ export default function NewLeadsScreen() {
         <EmptyState
           title="Review queue clear"
           body="New invite submissions will land here before they move into the active pipeline."
+          actionLabel="View invite tools"
+          actionIcon="link"
+          actionTestID="new-leads-invite-tools-button"
+          onAction={() => setIsInviteSheetOpen(true)}
           variant="guided"
           eyebrow="Queue"
           icon="inbox"
@@ -158,6 +167,11 @@ export default function NewLeadsScreen() {
           }
         />
       )}
+      <InviteToolsSheet
+        visible={isInviteSheetOpen}
+        onClose={() => setIsInviteSheetOpen(false)}
+        testID="new-leads-invite-sheet"
+      />
     </ScreenShell>
   )
 }
@@ -178,13 +192,24 @@ function ReviewLeadCard({
   return (
     <SurfaceCard style={styles.card} testID={`new-lead-card-${lead.id}`}>
       <View style={styles.header}>
-        <View style={styles.headerMeta}>
-          <Text style={styles.name}>{lead.buyerName}</Text>
-          <Text style={styles.contact}>
-            {lead.buyerEmail ?? lead.buyerPhone ?? "Awaiting contact details"}
-          </Text>
+        <View style={styles.identity}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{lead.buyerName.slice(0, 1).toUpperCase()}</Text>
+          </View>
+          <View style={styles.headerMeta}>
+            <Text style={styles.name}>{lead.buyerName}</Text>
+            <Text style={styles.contact}>
+              {lead.buyerEmail ?? lead.buyerPhone ?? "Awaiting contact details"}
+            </Text>
+          </View>
         </View>
-        <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
+        <View style={styles.headerChips}>
+          <LeadIntentChip
+            intakeType={lead.intakeType}
+            testID={`new-lead-intent-chip-${lead.id}`}
+          />
+          <StageChip stage={lead.pipelineStage} recommendation={lead.recommendation} />
+        </View>
       </View>
       <Text style={styles.summary}>{lead.summary ?? "Scoring summary pending."}</Text>
       <Text style={styles.hint}>Suggested path: {suggestedStage.replaceAll("_", " ")}</Text>
@@ -261,9 +286,33 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12
   },
+  identity: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: mobileTheme.colors.readySoft
+  },
+  avatarText: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "900",
+    color: mobileTheme.colors.ready
+  },
   headerMeta: {
     flex: 1,
     gap: 4
+  },
+  headerChips: {
+    alignItems: "flex-end",
+    gap: 8
   },
   name: {
     fontSize: 20,

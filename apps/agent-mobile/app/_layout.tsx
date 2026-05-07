@@ -49,7 +49,9 @@ export default function RootLayout() {
   return (
     <DiagnosticsErrorBoundary>
       <SessionProvider>
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false, gestureEnabled: true }}>
+          <Stack.Screen name="lead/[id]" options={{ gestureEnabled: true }} />
+        </Stack>
       </SessionProvider>
     </DiagnosticsErrorBoundary>
   )

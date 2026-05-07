@@ -14,7 +14,7 @@ import {
 type LeadRow = {
   id: string
   agent_id: string
-  intake_type: "sale" | "rental"
+  intake_type: "sale" | "rental" | null
   buyer_name: string
   buyer_email: string
   buyer_phone: string
@@ -76,7 +76,7 @@ function leadRow(input: Partial<LeadRow> & Pick<LeadRow, "id" | "pipeline_stage"
   return {
     id: input.id,
     agent_id: input.agent_id ?? "agent-1",
-    intake_type: input.intake_type ?? "sale",
+    intake_type: input.intake_type === undefined ? "sale" : input.intake_type,
     buyer_name: input.buyer_name ?? input.id,
     buyer_email: input.buyer_email ?? `${input.id}@example.com`,
     buyer_phone: input.buyer_phone ?? "+1 416 555 0100",
@@ -98,6 +98,7 @@ function leadRow(input: Partial<LeadRow> & Pick<LeadRow, "id" | "pipeline_stage"
 class FakeQueryBuilder {
   private eqFilters: Filter[] = []
   private inFilters: Array<{ column: string; values: unknown[] }> = []
+  private orFilters: string[] = []
   private limitCount: number | undefined
   private rangeBounds: { from: number; to: number } | undefined
   private selectOptions: SelectOptions | undefined
@@ -155,7 +156,8 @@ class FakeQueryBuilder {
     return this
   }
 
-  or() {
+  or(filters: string) {
+    this.orFilters.push(filters)
     return this
   }
 
@@ -189,6 +191,10 @@ class FakeQueryBuilder {
       if (filter.column === "pipeline_stage") {
         rows = rows.filter((row) => row.pipeline_stage === filter.value)
       }
+
+      if (filter.column === "intake_type") {
+        rows = rows.filter((row) => row.intake_type === filter.value)
+      }
     }
 
     for (const filter of this.inFilters) {
@@ -198,6 +204,12 @@ class FakeQueryBuilder {
 
       if (filter.column === "id") {
         rows = rows.filter((row) => filter.values.includes(row.id))
+      }
+    }
+
+    for (const filter of this.orFilters) {
+      if (filter === "intake_type.eq.sale,intake_type.is.null") {
+        rows = rows.filter((row) => row.intake_type === "sale" || row.intake_type === null)
       }
     }
 
@@ -367,6 +379,53 @@ describe("listAppointmentEligibleLeadSuggestions", () => {
 })
 
 describe("listPipelineLeads", () => {
+  it("filters active pipeline leads by rent and buy categories", async () => {
+    const client = createPipelineClient({
+      leadRows: [
+        leadRow({
+          id: "rental-ready",
+          intake_type: "rental",
+          pipeline_stage: "ready_to_show",
+          recommendation: "show"
+        }),
+        leadRow({
+          id: "buyer-nurture",
+          intake_type: "sale",
+          pipeline_stage: "nurture",
+          recommendation: "nurture"
+        }),
+        leadRow({
+          id: "legacy-buyer",
+          intake_type: null,
+          pipeline_stage: "hold",
+          recommendation: "hold"
+        }),
+        leadRow({
+          id: "rental-resolved",
+          intake_type: "rental",
+          pipeline_stage: "closed_won",
+          recommendation: "show"
+        })
+      ]
+    })
+
+    const rentResult = await listPipelineLeads(client as never, "agent-1", {
+      tab: "active",
+      category: "rent",
+      limit: 25,
+      offset: 0
+    })
+    const buyResult = await listPipelineLeads(client as never, "agent-1", {
+      tab: "active",
+      category: "buy",
+      limit: 25,
+      offset: 0
+    })
+
+    expect(rentResult.leads.map((lead) => lead.id)).toEqual(["rental-ready"])
+    expect(buyResult.leads.map((lead) => lead.id)).toEqual(["buyer-nurture", "legacy-buyer"])
+  })
+
   it("includes appointment-booked leads whose display stage matches the category", async () => {
     const client = createPipelineClient({
       leadRows: [

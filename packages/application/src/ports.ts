@@ -16,6 +16,7 @@ export type InviteGateway = {
     token: string
     shareUrl: string
     expiresAt: string
+    agentName?: string
   }>
 }
 

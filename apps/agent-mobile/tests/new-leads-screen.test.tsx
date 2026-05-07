@@ -17,6 +17,11 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
   useSession: jest.Mock
   useMobileApi: jest.Mock
 }
+const { router } = jest.requireMock("expo-router") as {
+  router: {
+    push: jest.Mock
+  }
+}
 
 describe("NewLeadsScreen", () => {
   let workspaceVersion = 0
@@ -70,6 +75,7 @@ describe("NewLeadsScreen", () => {
     workspaceVersion = 0
     api.listNewLeads.mockClear()
     api.reviewLead.mockClear()
+    router.push.mockReset()
     refreshWorkspace.mockReset()
 
     useSession.mockImplementation(() => ({
@@ -93,6 +99,7 @@ describe("NewLeadsScreen", () => {
     await waitFor(() => {
       expect(api.listNewLeads).toHaveBeenCalledTimes(1)
     })
+    expect(screen.getByTestId("new-leads-invite-tools-button")).toBeTruthy()
 
     workspaceVersion = 1
     screen.rerender(<NewLeadsScreen />)
@@ -151,5 +158,35 @@ describe("NewLeadsScreen", () => {
       limit: 25,
       offset: 25
     })
+  })
+
+  it("labels lead cards with buy and rent intent tags", async () => {
+    api.listNewLeads.mockResolvedValueOnce({
+      leads: [
+        reviewQueueLead,
+        {
+          ...reviewQueueLead,
+          id: "lead-rental",
+          buyerName: "Rowan Rental",
+          intakeType: "rental"
+        }
+      ],
+      total: 2
+    })
+
+    const screen = render(<NewLeadsScreen />)
+
+    expect(await screen.findByTestId("new-lead-intent-chip-lead-ready")).toBeTruthy()
+    expect(screen.getByTestId("new-lead-intent-chip-lead-rental")).toBeTruthy()
+    expect(screen.getByText("Buy")).toBeTruthy()
+    expect(screen.getByText("Rent")).toBeTruthy()
+  })
+
+  it("opens settings from the new leads header", async () => {
+    const screen = render(<NewLeadsScreen />)
+
+    fireEvent.press(await screen.findByTestId("new-leads-settings-button"))
+
+    expect(router.push).toHaveBeenCalledWith("/settings")
   })
 })

@@ -200,6 +200,14 @@ export function isLeadInCategory(lead: PipelineLead, category: PipelineCategory)
     return true
   }
 
+  if (category === "buy") {
+    return lead.intakeType === "sale"
+  }
+
+  if (category === "rent") {
+    return lead.intakeType === "rental"
+  }
+
   return getPipelineDisplayStage(lead) === category
 }
 

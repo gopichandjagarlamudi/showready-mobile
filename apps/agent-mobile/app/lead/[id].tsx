@@ -305,14 +305,13 @@ export default function LeadDetailScreen() {
     <ScreenShell
       title={lead?.buyerName ?? "Lead detail"}
       testID="lead-detail-screen"
+      leadingAction={{
+        icon: "chevron-left",
+        label: "Back to leads",
+        onPress: handleBack,
+        testID: "lead-back-chevron"
+      }}
     >
-      <ActionButton
-        label="Back to leads"
-        tone="secondary"
-        onPress={handleBack}
-        testID="lead-back-button"
-      />
-
       {message ? (
         <InlineMessage tone={message.tone} title={message.title} message={message.message} />
       ) : null}

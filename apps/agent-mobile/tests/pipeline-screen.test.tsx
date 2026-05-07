@@ -41,12 +41,17 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
   useSession: jest.Mock
   useMobileApi: jest.Mock
 }
+const { router } = jest.requireMock("expo-router") as {
+  router: {
+    push: jest.Mock
+  }
+}
 
 function pipelineLead(input: Partial<PipelineLead> & Pick<PipelineLead, "id" | "buyerName">): PipelineLead {
   return {
     id: input.id,
     agentId: "agent-1",
-    intakeType: "sale",
+    intakeType: input.intakeType ?? "sale",
     buyerName: input.buyerName,
     buyerEmail: input.buyerEmail ?? `${input.id}@example.com`,
     status: "submitted",
@@ -76,6 +81,8 @@ describe("PipelineScreen", () => {
       workspaceVersion: 0
     })
 
+    router.push.mockReset()
+
     moveLead = jest.fn(async (leadId: string, stage: string) => ({
       lead: {
         ...pipelineLead({ id: leadId, buyerName: "Riley Ready" }),
@@ -104,6 +111,7 @@ describe("PipelineScreen", () => {
           pipelineLead({
             id: "lead-ready",
             buyerName: "Riley Ready",
+            intakeType: "rental",
             attentionReason: "Ready to show with no appointment scheduled."
           })
         ],
@@ -166,6 +174,27 @@ describe("PipelineScreen", () => {
     })
   })
 
+  it("applies rent and buy category filters and labels lead cards by intent", async () => {
+    const screen = render(<PipelineScreen />)
+
+    expect(await screen.findByTestId("pipeline-intent-chip-lead-ready")).toBeTruthy()
+    expect(screen.getByText("Rent")).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("pipeline-filter-button"))
+    expect(screen.getByText("Buy")).toBeTruthy()
+    fireEvent.press(screen.getByTestId("pipeline-stage-option-rent"))
+    fireEvent.press(screen.getByTestId("pipeline-filter-apply"))
+
+    await waitFor(() => {
+      expect(listPipelineLeads).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: "rent",
+          offset: 0
+        })
+      )
+    })
+  })
+
   it("reloads the current pipeline after moving a lead within the same view", async () => {
     const screen = render(<PipelineScreen />)
 
@@ -213,5 +242,13 @@ describe("PipelineScreen", () => {
         })
       )
     })
+  })
+
+  it("opens settings from the pipeline header", async () => {
+    const screen = render(<PipelineScreen />)
+
+    fireEvent.press(await screen.findByTestId("pipeline-settings-button"))
+
+    expect(router.push).toHaveBeenCalledWith("/settings")
   })
 })

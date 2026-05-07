@@ -3,11 +3,13 @@ import { GET } from "./route"
 
 const {
   mockRequireMobileAgent,
+  mockCreateSupabaseAdminClient,
   mockGetAnalyticsSummary,
   mockListRecentLeads,
   mockRequestErrorResponse
 } = vi.hoisted(() => ({
   mockRequireMobileAgent: vi.fn(),
+  mockCreateSupabaseAdminClient: vi.fn(),
   mockGetAnalyticsSummary: vi.fn(),
   mockListRecentLeads: vi.fn(),
   mockRequestErrorResponse: vi.fn(async (input: {
@@ -46,12 +48,18 @@ vi.mock("@/lib/supabase/data", () => ({
   listRecentLeads: mockListRecentLeads
 }))
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: mockCreateSupabaseAdminClient
+}))
+
 describe("GET /api/mobile/home", () => {
   beforeEach(() => {
     mockRequireMobileAgent.mockReset()
+    mockCreateSupabaseAdminClient.mockReset()
     mockGetAnalyticsSummary.mockReset()
     mockListRecentLeads.mockReset()
     mockRequestErrorResponse.mockClear()
+    mockCreateSupabaseAdminClient.mockReturnValue({ service: true })
     mockRequireMobileAgent.mockResolvedValue({
       agentId: "agent-1",
       client: {}
@@ -81,7 +89,7 @@ describe("GET /api/mobile/home", () => {
     expect(response.headers.get("server-timing")).toContain("auth")
     expect(response.headers.get("server-timing")).toContain("data")
     expect(mockRequireMobileAgent).toHaveBeenCalledTimes(1)
-    expect(mockGetAnalyticsSummary).toHaveBeenCalledWith({}, "agent-1")
+    expect(mockGetAnalyticsSummary).toHaveBeenCalledWith({ service: true }, "agent-1")
     expect(mockListRecentLeads).toHaveBeenCalledWith({}, "agent-1", 4)
     await expect(response.json()).resolves.toEqual({
       summary: {

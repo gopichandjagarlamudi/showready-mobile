@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import { mobileTheme } from "@/lib/theme"
 
 export function SegmentedControl<T extends string>({
@@ -34,6 +35,14 @@ export function SegmentedControl<T extends string>({
               pressed ? styles.optionPressed : null
             ]}
           >
+            {isSelected && variant === "pill" ? (
+              <LinearGradient
+                colors={[...mobileTheme.gradients.tab]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : null}
             <Text
               style={[
                 styles.label,
@@ -73,10 +82,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
-    paddingVertical: 10
+    paddingVertical: 10,
+    overflow: "hidden"
   },
   optionSelected: {
-    backgroundColor: mobileTheme.colors.brand
+    backgroundColor: "transparent"
   },
   tabOption: {
     borderRadius: mobileTheme.radii.control

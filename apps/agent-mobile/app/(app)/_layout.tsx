@@ -19,26 +19,27 @@ export default function AppTabsLayout() {
         },
         tabBarStyle: {
           position: "absolute",
-          left: 12,
-          right: 12,
-          bottom: 12,
-          height: 84,
-          paddingTop: 12,
-          paddingBottom: 12,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 96,
+          paddingTop: 14,
+          paddingBottom: 18,
           backgroundColor: mobileTheme.colors.surface,
           borderTopWidth: 0,
           borderWidth: 1,
           borderColor: mobileTheme.colors.border,
-          borderRadius: 26,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
           ...mobileTheme.elevation.floating
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          lineHeight: 15,
-          fontWeight: "700"
+          fontSize: 12,
+          lineHeight: 16,
+          fontWeight: "800"
         },
         tabBarItemStyle: {
-          borderRadius: 20
+          borderRadius: 22
         },
         tabBarActiveTintColor: mobileTheme.colors.brand,
         tabBarInactiveTintColor: mobileTheme.colors.mutedInk

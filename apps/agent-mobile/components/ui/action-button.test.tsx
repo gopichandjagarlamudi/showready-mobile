@@ -18,7 +18,7 @@ describe("ActionButton", () => {
     expect(onPress).toHaveBeenCalledTimes(1)
   })
 
-  it("uses the ShowReady green token for primary actions", () => {
+  it("uses a gradient surface for primary actions instead of a solid green fill", () => {
     const screen = render(
       <ActionButton
         label="Create invite"
@@ -32,6 +32,7 @@ describe("ActionButton", () => {
       typeof rawStyle === "function" ? rawStyle({ pressed: false }) : rawStyle
     )
 
-    expect(style.backgroundColor).toBe("#24533f")
+    expect(style.backgroundColor).toBeUndefined()
+    expect(screen.getByTestId("invite-button-gradient")).toBeTruthy()
   })
 })

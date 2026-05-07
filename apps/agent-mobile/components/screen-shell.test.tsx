@@ -9,6 +9,9 @@ describe("ScreenShell", () => {
       </ScreenShell>
     )
 
+    expect(screen.getByTestId("showready-brand-mark")).toBeTruthy()
+    expect(screen.getByText("Show")).toBeTruthy()
+    expect(screen.getByText("Ready")).toBeTruthy()
     expect(screen.getByText("Dashboard")).toBeTruthy()
     expect(screen.getByText("Overview")).toBeTruthy()
   })
@@ -31,6 +34,27 @@ describe("ScreenShell", () => {
     )
 
     fireEvent.press(screen.getByTestId("shell-header-action"))
+
+    expect(onPress).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders a leading header action for detail navigation", () => {
+    const onPress = jest.fn()
+    const screen = render(
+      <ScreenShell
+        title="Lead detail"
+        leadingAction={{
+          icon: "chevron-left",
+          label: "Back to leads",
+          onPress,
+          testID: "lead-back-chevron"
+        }}
+      >
+        <></>
+      </ScreenShell>
+    )
+
+    fireEvent.press(screen.getByTestId("lead-back-chevron"))
 
     expect(onPress).toHaveBeenCalledTimes(1)
   })

@@ -1,16 +1,16 @@
-import { useEffect, useRef, useState } from "react"
-import * as Clipboard from "expo-clipboard"
+import { useEffect, useState } from "react"
 import { Feather } from "@expo/vector-icons"
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native"
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { router } from "expo-router"
 import type { DashboardSummary, Lead } from "@showready/contracts"
 import { EmptyState } from "@/components/empty-state"
+import { InviteToolsSheet } from "@/components/invite-tools-sheet"
 import { ScreenShell } from "@/components/screen-shell"
 import { ActionButton } from "@/components/ui/action-button"
-import { BottomSheet } from "@/components/ui/bottom-sheet"
 import { InlineMessage } from "@/components/ui/inline-message"
 import { StageChip } from "@/components/ui/stage-chip"
 import { SurfaceCard } from "@/components/ui/surface-card"
+import { settingsHeaderAction } from "@/lib/settings-header-action"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
@@ -25,11 +25,7 @@ export default function HomeScreen() {
     title: string
     message: string
   } | null>(null)
-  const [isCreatingInvite, setIsCreatingInvite] = useState(false)
-  const [latestInviteUrl, setLatestInviteUrl] = useState<string | null>(null)
   const [isInviteSheetOpen, setIsInviteSheetOpen] = useState(false)
-  const [hasCopiedInvite, setHasCopiedInvite] = useState(false)
-  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -65,108 +61,10 @@ export default function HomeScreen() {
     }
   }, [api, session, workspaceVersion])
 
-  useEffect(() => {
-    return () => {
-      clearCopyFeedbackTimer()
-    }
-  }, [])
-
-  function clearCopyFeedbackTimer() {
-    if (copyFeedbackTimerRef.current) {
-      clearTimeout(copyFeedbackTimerRef.current)
-      copyFeedbackTimerRef.current = null
-    }
-  }
-
-  function resetCopyFeedback() {
-    clearCopyFeedbackTimer()
-    setHasCopiedInvite(false)
-  }
-
-  function showCopyFeedback() {
-    clearCopyFeedbackTimer()
-    setHasCopiedInvite(true)
-    copyFeedbackTimerRef.current = setTimeout(() => {
-      setHasCopiedInvite(false)
-      copyFeedbackTimerRef.current = null
-    }, 2000)
-  }
-
-  function closeInviteSheet() {
-    resetCopyFeedback()
-    setIsInviteSheetOpen(false)
-  }
-
-  async function handleCreateInvite() {
-    resetCopyFeedback()
-    setIsCreatingInvite(true)
-    setMessage(null)
-
-    try {
-      const invite = await api.createInvite()
-      setLatestInviteUrl(invite.shareUrl)
-      setIsInviteSheetOpen(true)
-      setMessage({
-        tone: "success",
-        title: "Invite ready",
-        message: "A fresh intake link is ready to copy or share."
-      })
-    } catch (error) {
-      setMessage({
-        tone: "error",
-        title: "Unable to create invite",
-        message: error instanceof Error ? error.message : "Try again."
-      })
-    } finally {
-      setIsCreatingInvite(false)
-    }
-  }
-
-  async function handleCopyInvite() {
-    if (!latestInviteUrl) {
-      return
-    }
-
-    try {
-      await Clipboard.setStringAsync(latestInviteUrl)
-      showCopyFeedback()
-    } catch (error) {
-      setMessage({
-        tone: "error",
-        title: "Unable to copy invite",
-        message: error instanceof Error ? error.message : "Try again."
-      })
-    }
-  }
-
-  async function handleShareInvite() {
-    if (!latestInviteUrl) {
-      return
-    }
-
-    try {
-      await Share.share({
-        message: latestInviteUrl,
-        url: latestInviteUrl
-      })
-    } catch (error) {
-      setMessage({
-        tone: "error",
-        title: "Unable to share invite",
-        message: error instanceof Error ? error.message : "Try again."
-      })
-    }
-  }
-
   return (
     <ScreenShell
       title="Field dashboard"
-      headerAction={{
-        icon: "settings",
-        label: "Open settings",
-        onPress: () => router.push("/settings"),
-        testID: "home-settings-button"
-      }}
+      headerAction={settingsHeaderAction("home-settings-button")}
       testID="dashboard-screen"
     >
       {message ? (
@@ -246,19 +144,20 @@ export default function HomeScreen() {
               testID="home-metric-nurture"
               onPress={() => router.push("/pipeline")}
             />
-            <MetricTile
-              label="Hold"
-              value={summary.hold}
-              tone="hold"
-              icon="clock"
-              testID="home-metric-hold"
-              onPress={() => router.push("/pipeline")}
-            />
           </ScrollView>
 
           <SurfaceCard style={styles.listCard}>
             <View style={styles.listHeader}>
               <Text style={styles.sectionTitle}>Recent lead movement</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="View all recent lead movement"
+                onPress={() => router.push("/pipeline")}
+                style={({ pressed }) => [styles.viewAllButton, pressed ? styles.leadRowPressed : null]}
+                testID="home-recent-view-all"
+              >
+                <Text style={styles.viewAllText}>View all</Text>
+              </Pressable>
             </View>
 
             {recentLeads.length === 0 ? (
@@ -300,63 +199,7 @@ export default function HomeScreen() {
           </SurfaceCard>
         </>
       )}
-      <BottomSheet
-        visible={isInviteSheetOpen}
-        onClose={closeInviteSheet}
-        title="Invite tools"
-        testID="invite-sheet"
-      >
-        {latestInviteUrl ? (
-          <>
-            <View style={styles.generatedInvite}>
-              <Text selectable style={styles.generatedInviteUrl}>
-                {latestInviteUrl}
-              </Text>
-            </View>
-            <View style={styles.actionRow}>
-              <ActionButton
-                label={isCreatingInvite ? "Creating invite..." : "Refresh invite"}
-                icon="refresh-cw"
-                onPress={() => {
-                  void handleCreateInvite()
-                }}
-                disabled={isCreatingInvite}
-                testID="invite-button"
-              />
-              <ActionButton
-                label={hasCopiedInvite ? "Copied to clipboard" : "Copy link"}
-                icon={hasCopiedInvite ? "check" : "copy"}
-                tone="secondary"
-                onPress={() => {
-                  void handleCopyInvite()
-                }}
-                testID="copy-invite-button"
-              />
-              <ActionButton
-                label="Share link"
-                icon="share"
-                tone="secondary"
-                onPress={() => {
-                  void handleShareInvite()
-                }}
-                testID="share-invite-button"
-              />
-            </View>
-          </>
-        ) : (
-          <View style={styles.inviteQuickStart}>
-            <ActionButton
-              label={isCreatingInvite ? "Creating invite..." : "Create invite"}
-              icon="link"
-              onPress={() => {
-                void handleCreateInvite()
-              }}
-              disabled={isCreatingInvite}
-              testID="invite-button"
-            />
-          </View>
-        )}
-      </BottomSheet>
+      <InviteToolsSheet visible={isInviteSheetOpen} onClose={() => setIsInviteSheetOpen(false)} />
     </ScreenShell>
   )
 }
@@ -444,21 +287,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: mobileTheme.colors.ink
   },
-  generatedInvite: {
-    borderRadius: mobileTheme.radii.control,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.border,
-    backgroundColor: mobileTheme.colors.surfaceMuted,
-    padding: 14
-  },
-  generatedInviteUrl: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: mobileTheme.colors.ink
-  },
-  inviteQuickStart: {
-    gap: 12
-  },
   listCard: {
     gap: 14
   },
@@ -524,7 +352,23 @@ const styles = StyleSheet.create({
     gap: 10
   },
   listHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 12
+  },
+  viewAllButton: {
+    minHeight: 44,
+    borderRadius: mobileTheme.radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
+  viewAllText: {
+    color: mobileTheme.colors.brand,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800"
   },
   inlineEmptyState: {
     flexDirection: "row",
