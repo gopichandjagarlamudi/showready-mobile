@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native"
 import { Feather } from "@expo/vector-icons"
+import { LinearGradient } from "expo-linear-gradient"
 import { mobileTheme } from "@/lib/theme"
 
 export function ActionButton({
@@ -35,6 +36,15 @@ export function ActionButton({
         disabled ? styles.disabled : null
       ]}
     >
+      {tone === "primary" ? (
+        <LinearGradient
+          testID={testID ? `${testID}-gradient` : undefined}
+          colors={[...mobileTheme.gradients.primary]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       <View style={styles.content}>
         {icon ? (
           <Feather
@@ -45,7 +55,7 @@ export function ActionButton({
                 ? mobileTheme.colors.inverse
                 : tone === "danger"
                   ? mobileTheme.colors.lost
-                  : mobileTheme.colors.ink
+                  : mobileTheme.colors.brand
             }
           />
         ) : null}
@@ -72,17 +82,17 @@ const styles = StyleSheet.create({
     borderRadius: mobileTheme.radii.pill,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 18,
-    paddingVertical: 13
+    paddingHorizontal: 22,
+    paddingVertical: 15,
+    overflow: "hidden"
   },
   primary: {
-    backgroundColor: mobileTheme.colors.brand,
     ...mobileTheme.elevation.card
   },
   secondary: {
     backgroundColor: mobileTheme.colors.surface,
     borderWidth: 1,
-    borderColor: mobileTheme.colors.borderStrong
+    borderColor: mobileTheme.colors.focus
   },
   danger: {
     backgroundColor: mobileTheme.colors.lostSoft,
@@ -104,7 +114,7 @@ const styles = StyleSheet.create({
     color: mobileTheme.colors.inverse
   },
   secondaryLabel: {
-    color: mobileTheme.colors.ink
+    color: mobileTheme.colors.brand
   },
   dangerLabel: {
     color: mobileTheme.colors.lost

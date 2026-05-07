@@ -14,13 +14,13 @@ describe("pipeline contracts", () => {
     expect(
       PipelineLeadListQuerySchema.parse({
         tab: "active",
-        category: "all",
+        category: "rent",
         limit: "100",
         offset: "5"
       })
     ).toEqual({
       tab: "active",
-      category: "all",
+      category: "rent",
       limit: 50,
       offset: 5
     })

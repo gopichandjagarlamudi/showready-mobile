@@ -168,7 +168,7 @@ describe("LeadDetailScreen", () => {
     appStateAddEventListenerSpy.mockRestore()
   })
 
-  it("shows a back action and returns to the previous screen", async () => {
+  it("shows an iOS-style back chevron and returns to the previous screen", async () => {
     const screen = render(<LeadDetailScreen />)
 
     await screen.findByTestId("lead-open-override-sheet-button")
@@ -177,8 +177,9 @@ describe("LeadDetailScreen", () => {
         "Review scoring context, move the lead through the pipeline, and preserve manual overrides with notes."
       )
     ).toBeNull()
+    expect(screen.queryByTestId("lead-back-button")).toBeNull()
 
-    fireEvent.press(screen.getByTestId("lead-back-button"))
+    fireEvent.press(screen.getByTestId("lead-back-chevron"))
 
     expect(router.back).toHaveBeenCalledTimes(1)
   })

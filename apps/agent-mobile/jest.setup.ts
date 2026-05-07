@@ -11,6 +11,15 @@ jest.mock("@expo/vector-icons", () => {
   }
 })
 
+jest.mock("expo-linear-gradient", () => {
+  const React = require("react")
+  const { View } = require("react-native")
+
+  return {
+    LinearGradient: (props: Record<string, unknown>) => React.createElement(View, props)
+  }
+})
+
 jest.mock("expo-notifications", () => ({
   getPermissionsAsync: jest.fn(async () => ({ status: "granted" })),
   requestPermissionsAsync: jest.fn(async () => ({ status: "granted" })),

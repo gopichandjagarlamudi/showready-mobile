@@ -9,6 +9,8 @@ export function EmptyState({
   actionLabel,
   onAction,
   actionTestID,
+  actionTone,
+  actionIcon,
   variant = "default",
   eyebrow,
   icon = "inbox"
@@ -18,6 +20,8 @@ export function EmptyState({
   actionLabel?: string
   onAction?: () => void
   actionTestID?: string
+  actionTone?: "primary" | "secondary"
+  actionIcon?: keyof typeof Feather.glyphMap
   variant?: "default" | "guided"
   eyebrow?: string
   icon?: keyof typeof Feather.glyphMap
@@ -26,7 +30,7 @@ export function EmptyState({
     <View style={[styles.container, variant === "guided" ? styles.guidedContainer : null]}>
       {variant === "guided" ? (
         <View style={styles.guidedBadge}>
-          <Feather name={icon} size={26} color={mobileTheme.colors.brand} />
+          <Feather name={icon} size={48} color={mobileTheme.colors.brand} />
         </View>
       ) : null}
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
@@ -36,7 +40,8 @@ export function EmptyState({
         <ActionButton
           label={actionLabel}
           onPress={onAction}
-          tone={variant === "guided" ? "primary" : "secondary"}
+          tone={actionTone ?? (variant === "guided" ? "primary" : "secondary")}
+          icon={actionIcon}
           testID={actionTestID}
         />
       ) : null}
@@ -54,34 +59,41 @@ const styles = StyleSheet.create({
     gap: 8
   },
   guidedContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 360,
+    paddingHorizontal: 28,
+    paddingVertical: 42,
     borderColor: mobileTheme.colors.border,
-    gap: 12,
+    gap: 16,
     ...mobileTheme.elevation.card
   },
   guidedBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 136,
+    height: 136,
+    borderRadius: 68,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: mobileTheme.colors.surfaceTint
   },
   eyebrow: {
     color: mobileTheme.colors.brandStrong,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0
   },
   title: {
     color: mobileTheme.colors.ink,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "800"
+    fontSize: mobileTheme.typography.section,
+    lineHeight: 34,
+    fontWeight: "900",
+    textAlign: "center"
   },
   body: {
     color: mobileTheme.colors.mutedInk,
     fontSize: mobileTheme.typography.body,
-    lineHeight: 25
+    lineHeight: 26,
+    textAlign: "center"
   }
 })

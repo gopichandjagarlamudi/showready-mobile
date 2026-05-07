@@ -40,12 +40,23 @@ jest.mock("../lib/diagnostics/service", () => ({
   captureDiagnosticsError: jest.fn(async () => {})
 }))
 
+jest.mock("expo-router", () => ({
+  router: {
+    push: jest.fn()
+  }
+}))
+
 const { useSession, useMobileApi } = jest.requireMock("../providers/session-provider") as {
   useSession: jest.Mock
   useMobileApi: jest.Mock
 }
 const { captureDiagnosticsError } = jest.requireMock("../lib/diagnostics/service") as {
   captureDiagnosticsError: jest.Mock
+}
+const { router } = jest.requireMock("expo-router") as {
+  router: {
+    push: jest.Mock
+  }
 }
 
 describe("AppointmentsScreen", () => {
@@ -166,6 +177,7 @@ describe("AppointmentsScreen", () => {
 
   beforeEach(() => {
     captureDiagnosticsError.mockClear()
+    router.push.mockReset()
     useSession.mockReturnValue({
       session: {
         user: {
@@ -203,6 +215,7 @@ describe("AppointmentsScreen", () => {
     const screen = render(<AppointmentsScreen />)
 
     await screen.findByTestId("appointments-open-schedule-sheet")
+    expect(screen.getByText("Manage your showings and history.")).toBeTruthy()
     expect(
       screen.queryByText(
         "Keep scheduling and queue review separate so every appointment task is clear on a phone-sized screen."
@@ -347,5 +360,13 @@ describe("AppointmentsScreen", () => {
         showings: [{ address: "123 Queen St W, Toronto" }]
       })
     })
+  })
+
+  it("opens settings from the appointments header", async () => {
+    const screen = render(<AppointmentsScreen />)
+
+    fireEvent.press(await screen.findByTestId("appointments-settings-button"))
+
+    expect(router.push).toHaveBeenCalledWith("/settings")
   })
 })

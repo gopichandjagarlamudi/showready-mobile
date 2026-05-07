@@ -360,6 +360,8 @@ export type PipelineCategory =
   | "closed_won"
   | "closed_lost"
   | "archived"
+  | "buy"
+  | "rent"
 export type PipelineMode = "focus_queue" | "filtered_results"
 export type PipelineLead = Pick<
   Lead,
@@ -953,7 +955,9 @@ export const PipelineCategorySchema = z.enum([
   "hold",
   "closed_won",
   "closed_lost",
-  "archived"
+  "archived",
+  "buy",
+  "rent"
 ])
 export const PipelineModeSchema = z.enum(["focus_queue", "filtered_results"])
 export const PipelineLeadListQuerySchema = z.strictObject({
@@ -1083,7 +1087,8 @@ export const AppointmentInitialDataResponseSchema = z.object({
 export const CreateInviteResponseSchema = z.object({
   token: z.string().min(1),
   shareUrl: z.string().url(),
-  expiresAt: z.string().datetime()
+  expiresAt: z.string().datetime(),
+  agentName: z.string().min(1).max(120).optional()
 })
 
 export const LeadStageMutationSchema = z.strictObject({

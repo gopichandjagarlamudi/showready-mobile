@@ -2,6 +2,7 @@ import { HomeDataResponseSchema } from "@showready/contracts"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
 import { requestErrorResponse } from "@/lib/observability"
 import { createRouteTiming, jsonWithRouteTiming } from "@/lib/route-timing"
+import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { getAnalyticsSummary, listRecentLeads } from "@/lib/supabase/data"
 
 export async function GET(request: Request) {
@@ -12,9 +13,10 @@ export async function GET(request: Request) {
     const auth = await timing.measure("auth", () => requireMobileAgent(request))
     agentId = auth.agentId
     const authenticatedAgentId = auth.agentId
+    const serviceClient = createSupabaseAdminClient()
     const [summary, recentLeads] = await timing.measure("data", () =>
       Promise.all([
-        getAnalyticsSummary(auth.client, authenticatedAgentId),
+        getAnalyticsSummary(serviceClient, authenticatedAgentId),
         listRecentLeads(auth.client, authenticatedAgentId, 4)
       ])
     )

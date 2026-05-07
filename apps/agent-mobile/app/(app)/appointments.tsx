@@ -13,6 +13,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { SurfaceCard } from "@/components/ui/surface-card"
 import { StageChip } from "@/components/ui/stage-chip"
 import { captureDiagnosticsError } from "@/lib/diagnostics/service"
+import { settingsHeaderAction } from "@/lib/settings-header-action"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
 
@@ -324,7 +325,9 @@ export default function AppointmentsScreen() {
   return (
     <ScreenShell
       title="Appointments"
+      subtitle="Manage your showings and history."
       testID="appointments-screen"
+      headerAction={settingsHeaderAction("appointments-settings-button")}
     >
       <SurfaceCard style={styles.schedulePromptCard}>
         <ActionButton
@@ -360,6 +363,8 @@ export default function AppointmentsScreen() {
           title="No appointments in this tab"
           body="Schedule a showing or switch tabs to review completed and cancelled history."
           actionLabel="Schedule now"
+          actionIcon="calendar"
+          actionTone="secondary"
           onAction={() => setIsScheduleSheetOpen(true)}
           variant="guided"
           eyebrow="Start here"

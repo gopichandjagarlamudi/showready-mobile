@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { POST } from "./route"
 
-const { mockRequireMobileAgent, mockCreateInvite } = vi.hoisted(() => ({
+const { mockRequireMobileAgent, mockCreateInvite, mockGetAgentProfile } = vi.hoisted(() => ({
   mockRequireMobileAgent: vi.fn(),
-  mockCreateInvite: vi.fn()
+  mockCreateInvite: vi.fn(),
+  mockGetAgentProfile: vi.fn()
 }))
 
 vi.mock("@/lib/mobile-auth", () => ({
@@ -13,7 +14,8 @@ vi.mock("@/lib/mobile-auth", () => ({
 }))
 
 vi.mock("@/lib/supabase/data", () => ({
-  createInvite: mockCreateInvite
+  createInvite: mockCreateInvite,
+  getAgentProfile: mockGetAgentProfile
 }))
 
 describe("POST /api/mobile/invites", () => {
@@ -26,6 +28,9 @@ describe("POST /api/mobile/invites", () => {
     mockCreateInvite.mockResolvedValue({
       token: "invite-token",
       tokenExpiresAt: "2026-04-25T12:00:00.000+00:00"
+    })
+    mockGetAgentProfile.mockResolvedValue({
+      fullName: "Jonathan"
     })
   })
 
@@ -43,7 +48,8 @@ describe("POST /api/mobile/invites", () => {
     await expect(response.json()).resolves.toEqual({
       token: "invite-token",
       shareUrl: "http://localhost:3000/intake/invite-token",
-      expiresAt: "2026-04-25T12:00:00.000Z"
+      expiresAt: "2026-04-25T12:00:00.000Z",
+      agentName: "Jonathan"
     })
   })
 
@@ -62,7 +68,8 @@ describe("POST /api/mobile/invites", () => {
     await expect(response.json()).resolves.toEqual({
       token: "invite-token",
       shareUrl: "http://192.168.5.13:3000/intake/invite-token",
-      expiresAt: "2026-04-25T12:00:00.000Z"
+      expiresAt: "2026-04-25T12:00:00.000Z",
+      agentName: "Jonathan"
     })
   })
 })

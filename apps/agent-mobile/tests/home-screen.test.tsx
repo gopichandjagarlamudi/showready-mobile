@@ -44,7 +44,10 @@ describe("HomeScreen", () => {
     useSession.mockReturnValue({
       session: {
         user: {
-          id: "agent-1"
+          id: "agent-1",
+          user_metadata: {
+            full_name: "Session Name"
+          }
         }
       }
     })
@@ -64,7 +67,8 @@ describe("HomeScreen", () => {
       createInvite: jest.fn(async () => ({
         token: "invite-token",
         shareUrl: "https://showready.example.com/intake/invite-token",
-        expiresAt: "2026-04-27T12:00:00.000Z"
+        expiresAt: "2026-04-27T12:00:00.000Z",
+        agentName: "Jonathan"
       }))
     })
   })
@@ -106,7 +110,7 @@ describe("HomeScreen", () => {
 
     await waitFor(() => {
       expect(setStringAsync).toHaveBeenCalledWith(
-        "https://showready.example.com/intake/invite-token"
+        "Jonathan has invited you to complete your ShowReady intake form. Please submit your information here: https://showready.example.com/intake/invite-token"
       )
     })
   })
@@ -125,7 +129,7 @@ describe("HomeScreen", () => {
 
     await waitFor(() => {
       expect(setStringAsync).toHaveBeenCalledWith(
-        "https://showready.example.com/intake/invite-token"
+        "Jonathan has invited you to complete your ShowReady intake form. Please submit your information here: https://showready.example.com/intake/invite-token"
       )
     })
     expect(await screen.findByText("Copied to clipboard")).toBeTruthy()
@@ -161,6 +165,9 @@ describe("HomeScreen", () => {
 
     fireEvent.press(screen.getByTestId("home-metric-booked"))
     expect(router.push).toHaveBeenCalledWith("/appointments")
+
+    expect(screen.queryByTestId("home-metric-hold")).toBeNull()
+    expect(screen.getByTestId("home-recent-view-all")).toBeTruthy()
   })
 
   it("uses an inline recent-activity empty state instead of nesting cards", async () => {
@@ -177,5 +184,13 @@ describe("HomeScreen", () => {
 
     const api = useMobileApi.mock.results[0]?.value
     expect(api.getHomeData).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens settings from the dashboard header", async () => {
+    const screen = render(<HomeScreen />)
+
+    fireEvent.press(await screen.findByTestId("home-settings-button"))
+
+    expect(router.push).toHaveBeenCalledWith("/settings")
   })
 })

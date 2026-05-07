@@ -502,6 +502,20 @@ export async function runRetentionCleanup(
   }))
 }
 
+export async function getAgentProfile(client: AppSupabaseClient, agentId: string) {
+  const { data, error } = await client
+    .from("agents")
+    .select("*")
+    .eq("id", agentId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data ? mapAgentProfile(data) : null
+}
+
 export async function listLeads(
   client: AppSupabaseClient,
   agentId: string,
@@ -707,6 +721,10 @@ function pipelineStagesForQuery(
     return activeStagesForQuery(tab)
   }
 
+  if (category === "buy" || category === "rent") {
+    return activeStagesForQuery(tab)
+  }
+
   if (tab === "active") {
     return category === "ready_to_show" || category === "nurture" || category === "hold"
       ? [category, "appointment_booked"]
@@ -716,6 +734,21 @@ function pipelineStagesForQuery(
   return category === "closed_won" || category === "closed_lost" || category === "archived"
     ? [category]
     : []
+}
+
+function applyPipelineIntakeTypeFilter(
+  queryBuilder: any,
+  category: PipelineLeadListQuery["category"]
+) {
+  if (category === "buy") {
+    return queryBuilder.or("intake_type.eq.sale,intake_type.is.null")
+  }
+
+  if (category === "rent") {
+    return queryBuilder.eq("intake_type", "rental")
+  }
+
+  return queryBuilder
 }
 
 function makeSummaryLabel(input: {
@@ -990,6 +1023,7 @@ export async function listPipelineLeads(
     .select(LEAD_LIST_COLUMNS, { count: "exact" })
     .eq("agent_id", agentId)
     .in("pipeline_stage", queryStages)
+  queryBuilder = applyPipelineIntakeTypeFilter(queryBuilder, input.category)
 
   if (input.submittedFrom) {
     queryBuilder = queryBuilder.gte("submitted_at", input.submittedFrom)

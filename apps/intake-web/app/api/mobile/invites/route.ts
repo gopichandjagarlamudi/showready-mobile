@@ -3,7 +3,7 @@ import { createInviteLink } from "@showready/application"
 import { serializeInviteResponse } from "@/lib/invite-response"
 import { MobileAuthError, requireMobileAgent } from "@/lib/mobile-auth"
 import { requestErrorResponse } from "@/lib/observability"
-import { createInvite } from "@/lib/supabase/data"
+import { createInvite, getAgentProfile } from "@/lib/supabase/data"
 import { buildAppUrl } from "@/lib/utils"
 
 export async function POST(request: Request) {
@@ -15,12 +15,16 @@ export async function POST(request: Request) {
     const authenticatedAgentId = auth.agentId
     const payload = await createInviteLink({
       createInvite: async () => {
-        const invite = await createInvite(auth.client, authenticatedAgentId)
+        const [invite, agent] = await Promise.all([
+          createInvite(auth.client, authenticatedAgentId),
+          getAgentProfile(auth.client, authenticatedAgentId)
+        ])
 
         return serializeInviteResponse({
           token: invite.token,
           tokenExpiresAt: invite.tokenExpiresAt,
-          appUrl: buildAppUrl("", { request })
+          appUrl: buildAppUrl("", { request }),
+          agentName: agent?.fullName
         })
       }
     })
