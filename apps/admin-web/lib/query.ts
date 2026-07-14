@@ -80,7 +80,7 @@ export function buildPageCursors(
   total: number,
   pageSize: number
 ) {
-  const previousCursor = encodeCursor(Math.max(0, offset - pageSize))
+  const previousCursor = offset > 0 ? encodeCursor(Math.max(0, offset - pageSize)) : undefined
   const hasMore = offset + itemCount < total
   const nextCursor = hasMore ? encodeCursor(offset + pageSize) : undefined
 
