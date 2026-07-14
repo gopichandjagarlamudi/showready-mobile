@@ -7,7 +7,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, ".")
+      "@": path.resolve(__dirname, "."),
+      "server-only": path.resolve(__dirname, "lib/test-utils/server-only-mock.ts")
     }
   },
   test: {
