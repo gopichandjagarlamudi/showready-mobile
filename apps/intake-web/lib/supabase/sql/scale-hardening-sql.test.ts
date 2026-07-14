@@ -39,4 +39,40 @@ describe("scale hardening SQL migrations", () => {
     expect(sql).toContain("leads_agent_updated_id_idx")
     expect(sql).toContain("public.consume_rate_limits")
   })
+
+  it("keeps launch security RLS and public grants locked down", () => {
+    const sql = readFileSync(
+      new URL("./2026-05-10-launch-security-hardening.sql", import.meta.url),
+      "utf8"
+    )
+
+    expect(sql).toContain("alter default privileges for role postgres in schema public")
+    expect(sql).toContain("alter table public.leads enable row level security")
+    expect(sql).toContain("revoke all on table")
+    expect(sql).toContain("from anon")
+    expect(sql).toContain("create policy leads_select_own")
+    expect(sql).toContain("agent_id = (select auth.uid())")
+    expect(sql).toContain("create policy api_rate_limits_no_direct_access")
+    expect(sql).toContain("grant select, insert, update, delete on table")
+    expect(sql).toContain("to service_role")
+  })
+
+  it("keeps admin dashboard RPCs private and excludes lead/client payload columns", () => {
+    const sql = readFileSync(
+      new URL("./2026-07-14-admin-dashboard.sql", import.meta.url),
+      "utf8"
+    )
+
+    expect(sql).toContain("create or replace function public.get_admin_dashboard_overview")
+    expect(sql).toContain("create or replace function public.list_admin_agents")
+    expect(sql).toContain("create or replace function public.get_admin_agent_detail")
+    expect(sql).toContain("create or replace function public.list_admin_feedback")
+    expect(sql).toContain("grant execute on function public.get_admin_dashboard_overview(integer) to service_role")
+    expect(sql).toContain("revoke all on function public.get_admin_dashboard_overview(integer) from public, anon, authenticated")
+    expect(sql).not.toContain("buyer_name")
+    expect(sql).not.toContain("buyer_email")
+    expect(sql).not.toContain("buyer_phone")
+    expect(sql).not.toContain("breadcrumbs")
+    expect(sql).not.toContain("stack")
+  })
 })
