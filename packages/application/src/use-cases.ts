@@ -1,9 +1,13 @@
 import type {
+  AdminDashboardRangeDays,
+  AdminAgentListQuery,
+  AdminFeedbackListQuery,
   AppointmentStatus,
   IntakeDraft,
   LeadStage
 } from "@showready/contracts"
 import type {
+  AdminDashboardGateway,
   AppointmentGateway,
   DashboardGateway,
   IntakeGateway,
@@ -87,4 +91,33 @@ export async function saveSettingsProfile(
   }
 ) {
   return gateway.saveSettings(input)
+}
+
+export async function getAdminDashboardOverview(
+  gateway: Pick<AdminDashboardGateway, "getOverview">,
+  rangeDays: AdminDashboardRangeDays
+) {
+  return gateway.getOverview(rangeDays)
+}
+
+export async function listAdminAgents(
+  gateway: Pick<AdminDashboardGateway, "listAgents">,
+  input: AdminAgentListQuery
+) {
+  return gateway.listAgents(input)
+}
+
+export async function getAdminAgentDetail(
+  gateway: Pick<AdminDashboardGateway, "getAgentDetail">,
+  agentId: string,
+  rangeDays: AdminDashboardRangeDays
+) {
+  return gateway.getAgentDetail(agentId, rangeDays)
+}
+
+export async function listAdminFeedback(
+  gateway: Pick<AdminDashboardGateway, "listFeedback">,
+  input: AdminFeedbackListQuery
+) {
+  return gateway.listFeedback(input)
 }

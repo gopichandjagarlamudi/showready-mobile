@@ -1,4 +1,11 @@
 import type {
+  AdminAgentDetail,
+  AdminAgentList,
+  AdminAgentListQuery,
+  AdminDashboardOverview,
+  AdminDashboardRangeDays,
+  AdminFeedbackList,
+  AdminFeedbackListQuery,
   Appointment,
   AppointmentStatus,
   DashboardSummary,
@@ -57,4 +64,11 @@ export type SettingsGateway = {
     licenseNumber?: string
     emailNotificationsEnabled: boolean
   }): Promise<{ ok: true }>
+}
+
+export type AdminDashboardGateway = {
+  getOverview(rangeDays: AdminDashboardRangeDays): Promise<AdminDashboardOverview>
+  listAgents(input: AdminAgentListQuery): Promise<AdminAgentList>
+  getAgentDetail(agentId: string, rangeDays: AdminDashboardRangeDays): Promise<AdminAgentDetail | null>
+  listFeedback(input: AdminFeedbackListQuery): Promise<AdminFeedbackList>
 }

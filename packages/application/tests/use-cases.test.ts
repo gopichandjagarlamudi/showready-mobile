@@ -3,6 +3,10 @@ import type { IntakeDraft, Lead, LeadStage } from "@showready/contracts"
 import {
   autosaveIntakeStep,
   createInviteLink,
+  getAdminAgentDetail,
+  getAdminDashboardOverview,
+  listAdminAgents,
+  listAdminFeedback,
   loadDashboardSummary,
   reviewLeadSubmission,
   saveAppointment,
@@ -145,5 +149,24 @@ describe("application use cases", () => {
 
     expect(invite.token).toBe("token-1")
     expect(saved.ok).toBe(true)
+  })
+
+  it("loads all admin dashboard reads through the admin gateway", async () => {
+    const gateway = {
+      getOverview: vi.fn(async () => ({ rangeDays: 30, metrics: [], dailyEventVolume: [], errorGroups: [] })),
+      listAgents: vi.fn(async () => ({ items: [], total: 0 })),
+      getAgentDetail: vi.fn(async () => null),
+      listFeedback: vi.fn(async () => ({ items: [], total: 0 }))
+    }
+
+    await getAdminDashboardOverview(gateway, 30)
+    await listAdminAgents(gateway, { query: "Morgan", rangeDays: 30, offset: 0, pageSize: 25 })
+    await getAdminAgentDetail(gateway, "00000000-0000-4000-8000-000000000001", 30)
+    await listAdminFeedback(gateway, { query: "", rangeDays: 7, offset: 0, pageSize: 25 })
+
+    expect(gateway.getOverview).toHaveBeenCalledWith(30)
+    expect(gateway.listAgents).toHaveBeenCalledWith({ query: "Morgan", rangeDays: 30, offset: 0, pageSize: 25 })
+    expect(gateway.getAgentDetail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001", 30)
+    expect(gateway.listFeedback).toHaveBeenCalledWith({ query: "", rangeDays: 7, offset: 0, pageSize: 25 })
   })
 })
