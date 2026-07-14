@@ -137,9 +137,13 @@ as $$
           'appointmentCount', appointment_count
         )
         order by last_tracked_activity_at desc nulls last, full_name, id
-        limit p_limit offset p_offset
       )
-      from agent_base
+      from (
+        select *
+        from agent_base
+        order by last_tracked_activity_at desc nulls last, full_name, id
+        limit p_limit offset p_offset
+      ) as paged_agents
     ), '[]'::jsonb),
     'total', coalesce((select count(*)::int from agent_base), 0)
   );
@@ -314,9 +318,13 @@ as $$
           'createdAt', created_at
         )
         order by created_at desc, id desc
-        limit p_limit offset p_offset
       )
-      from feedback_base
+      from (
+        select *
+        from feedback_base
+        order by created_at desc, id desc
+        limit p_limit offset p_offset
+      ) as paged_feedback
     ), '[]'::jsonb),
     'total', coalesce((select count(*)::int from feedback_base), 0)
   );

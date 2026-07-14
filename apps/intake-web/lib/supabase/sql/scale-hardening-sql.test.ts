@@ -85,4 +85,24 @@ describe("scale hardening SQL migrations", () => {
     expect(sql).not.toContain("breadcrumbs")
     expect(sql).not.toContain("stack")
   })
+
+  it("paginates dashboard JSON arrays before aggregation", () => {
+    const sql = readFileSync(
+      new URL("./2026-07-14-admin-dashboard.sql", import.meta.url),
+      "utf8"
+    )
+
+    expect(sql).not.toContain(
+      "order by last_tracked_activity_at desc nulls last, full_name, id\n        limit p_limit offset p_offset\n      )\n      from agent_base"
+    )
+    expect(sql).not.toContain(
+      "order by created_at desc, id desc\n        limit p_limit offset p_offset\n      )\n      from feedback_base"
+    )
+    expect(sql).toContain(
+      "from agent_base\n        order by last_tracked_activity_at desc nulls last, full_name, id\n        limit p_limit offset p_offset"
+    )
+    expect(sql).toContain(
+      "from feedback_base\n        order by created_at desc, id desc\n        limit p_limit offset p_offset"
+    )
+  })
 })
