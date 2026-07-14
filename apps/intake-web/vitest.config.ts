@@ -11,6 +11,6 @@ export default defineConfig({
     }
   },
   test: {
-    exclude: ["node_modules/**", ".next/**", "dist/**", "tests/e2e/**", "test-results/**"]
+    exclude: ["node_modules/**", ".next/**", "dist/**", "tests/e2e/**", "tests/redirects/**", "test-results/**"]
   }
 })

@@ -10,6 +10,10 @@ jest.mock("../lib/share-csv", () => ({
   shareCsvFile: jest.fn(async () => undefined)
 }))
 
+jest.mock("expo-linking", () => ({
+  openURL: jest.fn(async () => true)
+}))
+
 const { useSession, useMobileApi } = jest.requireMock("../providers/session-provider") as {
   useSession: jest.Mock
   useMobileApi: jest.Mock
@@ -17,14 +21,20 @@ const { useSession, useMobileApi } = jest.requireMock("../providers/session-prov
 const { shareCsvFile } = jest.requireMock("../lib/share-csv") as {
   shareCsvFile: jest.Mock
 }
+const Linking = jest.requireMock("expo-linking") as {
+  openURL: jest.Mock
+}
 
 describe("SettingsScreen", () => {
   let saveSettings: jest.Mock
   let submitFeedback: jest.Mock
   let exportLeadsCsv: jest.Mock
+  let requestAccountDeletion: jest.Mock
 
   beforeEach(() => {
     jest.useFakeTimers()
+    process.env.EXPO_PUBLIC_API_BASE_URL = "https://app.showready.test"
+    process.env.EXPO_PUBLIC_SITE_URL = "https://app.showready.test"
     jest.setSystemTime(new Date("2026-05-04T12:00:00.000Z"))
     saveSettings = jest.fn(async () => undefined)
     submitFeedback = jest.fn(async () => ({ ok: true }))
@@ -33,7 +43,13 @@ describe("SettingsScreen", () => {
       csv: "First Name,Email\nRiley,riley@example.com\n",
       rowCount: 1
     }))
+    requestAccountDeletion = jest.fn(async () => ({
+      ok: true,
+      requestId: "privacy-request-1"
+    }))
     shareCsvFile.mockClear()
+    Linking.openURL.mockReset()
+    Linking.openURL.mockResolvedValue(true)
     useSession.mockReturnValue({
       session: {
         user: {
@@ -53,7 +69,8 @@ describe("SettingsScreen", () => {
       })),
       saveSettings,
       submitFeedback,
-      exportLeadsCsv
+      exportLeadsCsv,
+      requestAccountDeletion
     })
   })
 
@@ -204,6 +221,52 @@ describe("SettingsScreen", () => {
         csv: "First Name,Email\nRiley,riley@example.com\n"
       })
       expect(screen.getByText("CSV ready")).toBeTruthy()
+    })
+  })
+
+  it("opens privacy and legal resources from settings", async () => {
+    const screen = render(<SettingsScreen />)
+
+    await screen.findByTestId("settings-save-button")
+
+    expect(screen.getByText("Privacy & Legal")).toBeTruthy()
+    expect(screen.getByText(/lead and client contact details/i)).toBeTruthy()
+
+    fireEvent.press(screen.getByTestId("settings-open-privacy-policy-button"))
+    fireEvent.press(screen.getByTestId("settings-open-terms-button"))
+    fireEvent.press(screen.getByTestId("settings-open-support-button"))
+    fireEvent.press(screen.getByTestId("settings-open-account-deletion-web-button"))
+
+    await waitFor(() => {
+      expect(Linking.openURL).toHaveBeenCalledWith("https://app.showready.test/privacy")
+      expect(Linking.openURL).toHaveBeenCalledWith("https://app.showready.test/terms")
+      expect(Linking.openURL).toHaveBeenCalledWith("https://app.showready.test/support")
+      expect(Linking.openURL).toHaveBeenCalledWith(
+        "https://app.showready.test/account-deletion"
+      )
+    })
+  })
+
+  it("submits an authenticated account deletion request from settings", async () => {
+    const screen = render(<SettingsScreen />)
+
+    await screen.findByTestId("settings-save-button")
+
+    fireEvent.press(screen.getByTestId("settings-open-account-deletion-sheet-button"))
+
+    expect(await screen.findByTestId("settings-account-deletion-sheet")).toBeTruthy()
+
+    fireEvent.changeText(
+      screen.getByTestId("settings-account-deletion-note-input"),
+      "  Closing my account.  "
+    )
+    fireEvent.press(screen.getByTestId("settings-submit-account-deletion-button"))
+
+    await waitFor(() => {
+      expect(requestAccountDeletion).toHaveBeenCalledWith({
+        note: "Closing my account."
+      })
+      expect(screen.getByText("Deletion request sent")).toBeTruthy()
     })
   })
 
