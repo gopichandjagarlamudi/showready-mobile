@@ -164,7 +164,8 @@ set search_path = public
 as $$
   select
     case when exists (select 1 from public.agents where id = p_agent_id) then
-      jsonb_build_object(
+      (
+        select jsonb_build_object(
         'profile', jsonb_build_object(
           'id', a.id,
           'fullName', a.full_name,
@@ -265,9 +266,10 @@ as $$
             limit 20
           ) as recent_server_errors
         ), '[]'::jsonb)
+        )
+        from public.agents a
+        where a.id = p_agent_id
       )
-      from public.agents a
-      where a.id = p_agent_id
     else null
     end;
 $$;

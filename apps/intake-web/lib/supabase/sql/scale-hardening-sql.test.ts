@@ -105,4 +105,18 @@ describe("scale hardening SQL migrations", () => {
       "from feedback_base\n        order by created_at desc, id desc\n        limit p_limit offset p_offset"
     )
   })
+
+  it("uses a scalar agent-detail query inside its conditional result", () => {
+    const sql = readFileSync(
+      new URL("./2026-07-14-admin-dashboard.sql", import.meta.url),
+      "utf8"
+    )
+
+    expect(sql).toContain(
+      "case when exists (select 1 from public.agents where id = p_agent_id) then\n      (\n        select jsonb_build_object("
+    )
+    expect(sql).toContain(
+      "from public.agents a\n        where a.id = p_agent_id\n      )\n    else null"
+    )
+  })
 })
