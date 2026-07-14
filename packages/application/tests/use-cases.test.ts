@@ -153,7 +153,7 @@ describe("application use cases", () => {
 
   it("loads all admin dashboard reads through the admin gateway", async () => {
     const gateway = {
-      getOverview: vi.fn(async () => ({ rangeDays: 30, metrics: [], dailyEventVolume: [], errorGroups: [] })),
+      getOverview: vi.fn(async () => ({ rangeDays: 30 as const, metrics: [], dailyEventVolume: [], errorGroups: [] })),
       listAgents: vi.fn(async () => ({ items: [], total: 0 })),
       getAgentDetail: vi.fn(async () => null),
       listFeedback: vi.fn(async () => ({ items: [], total: 0 }))
