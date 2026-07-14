@@ -305,6 +305,17 @@ export type LeadListResponse = {
   nextOffset?: number
 }
 
+export type LeadMutation = {
+  buyerName: string
+  buyerEmail?: string
+  buyerPhone?: string
+  intakeType: IntakeType
+}
+
+export type AccountDeletionRequest = {
+  note?: string
+}
+
 export type AppointmentListQuery = {
   status: AppointmentStatus
   limit: number
@@ -715,6 +726,12 @@ const optionalLimitedString = (max: number) =>
 
 const limitedString = (max: number) => z.string().trim().max(max)
 const requiredLimitedString = (max: number) => limitedString(max).min(1)
+const URL_LIKE_PATTERN = /\b(?:https?:\/\/|www\.)/i
+const PHONE_ALLOWED_PATTERN = /^[+()\d\s.-]+$/
+
+function countDigits(value: string) {
+  return value.replace(/\D/g, "").length
+}
 
 export const ResourceIdSchema = z
   .string()
@@ -725,7 +742,20 @@ export const ResourceIdSchema = z
 
 const EmailSchema = z.string().trim().email().max(254)
 const OptionalEmailSchema = EmailSchema.optional()
-const PhoneSchema = z.string().trim().max(32).optional()
+const ContactNameSchema = limitedString(120).refine(
+  (value) => !URL_LIKE_PATTERN.test(value),
+  "Name cannot include URLs."
+)
+const PhoneSchema = z
+  .string()
+  .trim()
+  .max(32)
+  .refine(
+    (value) =>
+      value === "" || (PHONE_ALLOWED_PATTERN.test(value) && countDigits(value) >= 7),
+    "Phone number must include at least 7 digits and only phone characters."
+  )
+  .optional()
 
 const BuyerPurchaseGoalSchema = z.enum(["myself", "investment", "not_sure"])
 const BuyerTimelineSchema = z.enum([
@@ -802,7 +832,7 @@ const CustomAnswersSchema = z
   })
 
 const IntakeContactSchema = z.strictObject({
-  fullName: limitedString(120),
+  fullName: ContactNameSchema,
   phone: PhoneSchema,
   email: OptionalEmailSchema
 })
@@ -1089,6 +1119,25 @@ export const CreateInviteResponseSchema = z.object({
   shareUrl: z.string().url(),
   expiresAt: z.string().datetime(),
   agentName: z.string().min(1).max(120).optional()
+})
+
+export const LeadMutationSchema = z
+  .strictObject({
+    buyerName: requiredLimitedString(120),
+    buyerEmail: OptionalEmailSchema,
+    buyerPhone: PhoneSchema,
+    intakeType: IntakeTypeSchema.default("sale")
+  })
+  .refine(
+    (input) => Boolean(input.buyerEmail?.trim() || input.buyerPhone?.trim()),
+    {
+      message: "Add an email or phone number.",
+      path: ["buyerEmail"]
+    }
+  )
+
+export const AccountDeletionRequestSchema = z.strictObject({
+  note: optionalLimitedString(1000)
 })
 
 export const LeadStageMutationSchema = z.strictObject({
@@ -1445,3 +1494,5 @@ export const FirstPartyEventBatchResponseSchema = z.object({
 })
 
 export type FirstPartyEventBatchResponse = z.infer<typeof FirstPartyEventBatchResponseSchema>
+
+export * from "./admin-dashboard"
