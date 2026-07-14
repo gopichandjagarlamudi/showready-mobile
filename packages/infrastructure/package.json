@@ -18,6 +18,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@showready/application": "workspace:*",
     "@showready/contracts": "workspace:*",
     "@showready/domain": "workspace:*",
     "@supabase/supabase-js": "^2.84.0"
