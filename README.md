@@ -59,6 +59,15 @@ RATE_LIMIT_STORE=supabase
 EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_ANON_KEY=
 EXPO_PUBLIC_API_BASE_URL=
+EXPO_PUBLIC_SITE_URL=
+```
+
+`EXPO_PUBLIC_SITE_URL` owns public Support, Privacy, Terms, and Account Deletion links while `EXPO_PUBLIC_API_BASE_URL` remains the API and auth host.
+
+Required when lead email notifications are enabled:
+
+```bash
+LEAD_NOTIFICATION_WEBHOOK_URL=
 ```
 
 The guarded job endpoints are:
@@ -67,6 +76,8 @@ The guarded job endpoints are:
 - `/api/jobs/retention`: deletes one bounded retention batch per high-volume table.
 
 Both accept Vercel Cron `GET` requests with `Authorization: Bearer $CRON_SECRET`; manual runs can also use `POST` with that header or `x-job-token: $JOB_PROCESSOR_TOKEN`.
+
+The rollback runbook is in `docs/launch-rollback-plan.md`.
 
 Run these checks before rollout:
 
