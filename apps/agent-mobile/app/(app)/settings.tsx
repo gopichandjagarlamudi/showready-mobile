@@ -1,6 +1,7 @@
 import DateTimePicker from "@react-native-community/datetimepicker"
 import { useEffect, useMemo, useState } from "react"
 import { Feather } from "@expo/vector-icons"
+import * as Linking from "expo-linking"
 import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native"
 import { EmptyState } from "@/components/empty-state"
 import { ScreenShell } from "@/components/screen-shell"
@@ -9,6 +10,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet"
 import { FormField } from "@/components/ui/form-field"
 import { InlineMessage } from "@/components/ui/inline-message"
 import { SurfaceCard } from "@/components/ui/surface-card"
+import { getLegalUrl, type LegalLinkKey } from "@/lib/legal"
 import { shareCsvFile } from "@/lib/share-csv"
 import { mobileTheme } from "@/lib/theme"
 import { useMobileApi, useSession } from "@/providers/session-provider"
@@ -301,6 +303,18 @@ export default function SettingsScreen() {
     }
   }
 
+  async function openLegalLink(key: LegalLinkKey) {
+    try {
+      await Linking.openURL(getLegalUrl(key))
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        title: "Unable to open link",
+        message: error instanceof Error ? error.message : "Try again."
+      })
+    }
+  }
+
   return (
     <ScreenShell
       title="Settings"
@@ -404,6 +418,63 @@ export default function SettingsScreen() {
                   setIsExportSheetOpen(true)
                 }}
                 testID="settings-open-export-sheet-button"
+              />
+            </View>
+          </SurfaceCard>
+
+          <SurfaceCard style={styles.legalCard}>
+            <View style={styles.exportTitleGroup}>
+              <Text style={styles.preferenceTitle}>Privacy & Legal</Text>
+              <Text style={styles.legalBody}>
+                ShowReady collects account profile details, lead and client contact details,
+                intake answers, appointments, notification tokens, consent/audit records,
+                first-party product events, and diagnostics.
+              </Text>
+              <Text style={styles.legalBody}>
+                This data is used to authenticate your account, run lead workflows, send requested
+                notifications, export or delete data, secure the service, and troubleshoot issues.
+              </Text>
+              <Text style={styles.legalBody}>
+                Auth sessions use secure device storage where available. ShowReady does not sell
+                data or use third-party advertising tracking.
+              </Text>
+            </View>
+            <View style={styles.legalLinkGrid}>
+              <ActionButton
+                label="Privacy Policy"
+                icon="shield"
+                tone="secondary"
+                onPress={() => {
+                  void openLegalLink("privacy")
+                }}
+                testID="settings-open-privacy-policy-button"
+              />
+              <ActionButton
+                label="Terms of Use"
+                icon="file-text"
+                tone="secondary"
+                onPress={() => {
+                  void openLegalLink("terms")
+                }}
+                testID="settings-open-terms-button"
+              />
+              <ActionButton
+                label="Support"
+                icon="mail"
+                tone="secondary"
+                onPress={() => {
+                  void openLegalLink("support")
+                }}
+                testID="settings-open-support-button"
+              />
+              <ActionButton
+                label="Account deletion"
+                icon="external-link"
+                tone="secondary"
+                onPress={() => {
+                  void openLegalLink("accountDeletion")
+                }}
+                testID="settings-open-account-deletion-web-button"
               />
             </View>
           </SurfaceCard>
@@ -562,6 +633,17 @@ const styles = StyleSheet.create({
   },
   feedbackCard: {
     gap: 16
+  },
+  legalCard: {
+    gap: 16
+  },
+  legalBody: {
+    fontSize: mobileTheme.typography.bodySmall,
+    lineHeight: 20,
+    color: mobileTheme.colors.mutedInk
+  },
+  legalLinkGrid: {
+    gap: 10
   },
   preferenceRow: {
     flexDirection: "row",

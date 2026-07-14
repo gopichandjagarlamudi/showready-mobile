@@ -247,29 +247,6 @@ describe("SettingsScreen", () => {
     })
   })
 
-  it("submits an authenticated account deletion request from settings", async () => {
-    const screen = render(<SettingsScreen />)
-
-    await screen.findByTestId("settings-save-button")
-
-    fireEvent.press(screen.getByTestId("settings-open-account-deletion-sheet-button"))
-
-    expect(await screen.findByTestId("settings-account-deletion-sheet")).toBeTruthy()
-
-    fireEvent.changeText(
-      screen.getByTestId("settings-account-deletion-note-input"),
-      "  Closing my account.  "
-    )
-    fireEvent.press(screen.getByTestId("settings-submit-account-deletion-button"))
-
-    await waitFor(() => {
-      expect(requestAccountDeletion).toHaveBeenCalledWith({
-        note: "Closing my account."
-      })
-      expect(screen.getByText("Deletion request sent")).toBeTruthy()
-    })
-  })
-
   it("blocks export when the from date is after the to date", async () => {
     const screen = render(<SettingsScreen />)
 

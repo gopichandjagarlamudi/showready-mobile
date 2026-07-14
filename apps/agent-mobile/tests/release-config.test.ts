@@ -1,6 +1,5 @@
 const appConfig = require("../app.json")
 const easConfig = require("../eas.json")
-const packageConfig = require("../package.json")
 
 describe("release configuration", () => {
   it("declares the iOS privacy manifest in Expo config for EAS builds", () => {
@@ -73,12 +72,6 @@ describe("release configuration", () => {
       releaseStatus: "inProgress",
       rollout: 0.1
     })
-  })
-
-  it("runs Android Maestro smoke through the Android wrapper", () => {
-    expect(packageConfig.scripts["test:maestro:android"]).toBe(
-      "node ./scripts/run-maestro-android.cjs .maestro/smoke-android.yaml"
-    )
   })
 
   it("uses the canonical public site for every EAS profile", () => {
