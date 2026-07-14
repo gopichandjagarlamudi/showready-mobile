@@ -1,24 +1,5 @@
 import { createSupabaseAdminClient } from "./supabase/admin"
 
-const SENSITIVE_CONTEXT_KEYS = [
-  "authorization",
-  "cookie",
-  "email",
-  "phone",
-  "address",
-  "note",
-  "notes",
-  "token",
-  "password",
-  "secret",
-  "header",
-  "headers",
-  "body",
-  "payload",
-  "request",
-  "response"
-]
-
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
 const BEARER_PATTERN = /Bearer\s+[A-Za-z0-9._~+/=-]+/gi
 
