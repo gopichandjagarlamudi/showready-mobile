@@ -29,7 +29,7 @@ export function decodeCursor(cursor: string | null | undefined): number {
   }
 }
 
-export function parseRangeDays(raw: unknown): number {
+export function parseRangeDays(raw: unknown): 7 | 30 | 90 {
   const result = AdminDashboardRangeDaysSchema.safeParse(raw)
   return result.success ? result.data : 30
 }
