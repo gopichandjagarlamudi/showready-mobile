@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-const IsoDateTimeSchema = z.string().datetime()
+const IsoDateTimeSchema = z.string().datetime({ offset: true })
 const NullableIsoDateTimeSchema = IsoDateTimeSchema.nullable()
 const UuidSchema = z.string().uuid()
 

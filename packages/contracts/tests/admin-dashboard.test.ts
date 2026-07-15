@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   AdminAgentDetailSchema,
+  AdminAgentListSchema,
   AdminDashboardRangeDaysSchema,
   AdminFeedbackListQuerySchema
 } from "../src/admin-dashboard"
@@ -25,6 +26,25 @@ describe("admin dashboard contracts", () => {
     expect(() =>
       AdminFeedbackListQuerySchema.parse({ query: "x".repeat(101), rangeDays: 30 })
     ).toThrow()
+  })
+
+  it("accepts PostgreSQL offset timestamps in agent list responses", () => {
+    expect(
+      AdminAgentListSchema.parse({
+        items: [{
+          id: "00000000-0000-4000-8000-000000000001",
+          fullName: "Morgan",
+          email: "morgan@example.com",
+          brokerage: null,
+          joinedAt: "2026-07-15T12:00:00+00:00",
+          lastTrackedActivityAt: "2026-07-15T12:30:00+00:00",
+          leadCount: 0,
+          submittedIntakeCount: 0,
+          appointmentCount: 0
+        }],
+        total: 1
+      })
+    ).toMatchObject({ total: 1 })
   })
 
   it("rejects agent detail payloads that contain lead or client data", () => {
